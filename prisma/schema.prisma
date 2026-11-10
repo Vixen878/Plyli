@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @db.VarChar(191)
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  image         String?      @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  memberships   Membership[]
+  personalSpace Workspace?   @relation("PersonalWorkspace")
+}
+
+model Session {
+  id        String   @id @db.VarChar(191)
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?  @db.Text
+  userId    String   @db.VarChar(191)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @db.VarChar(191)
+  accountId             String    @db.VarChar(191)
+  providerId            String    @db.VarChar(191)
+  userId                String    @db.VarChar(191)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @db.VarChar(191)
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model RateLimit {
+  id          String @id @default(uuid()) @db.VarChar(191)
+  key         String @unique @db.VarChar(191)
+  count       Int
+  lastRequest BigInt
+}
+
+enum WorkspaceRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model Workspace {
+  id                    String          @id @default(uuid()) @db.VarChar(191)
+  name                  String
+  personalOwnerId       String?         @unique @db.VarChar(191)
+  personalOwner         User?           @relation("PersonalWorkspace", fields: [personalOwnerId], references: [id], onDelete: Restrict)
+  createdAt             DateTime        @default(now())
+  responseRetentionDays Int?
+  trashRetentionDays    Int             @default(7)
+  memberships           Membership[]
+  forms                 Form[]
+  apiCredentials        ApiCredential[]
+  auditEvents           AuditEvent[]
+}
+
+model Membership {
+  workspaceId String        @db.VarChar(191)
+  userId      String        @db.VarChar(191)
+  role        WorkspaceRole @default(EDITOR)
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+}
+
+model Form {
+  id                String         @id @db.VarChar(191)
+  workspaceId       String         @db.VarChar(191)
+  title             String @db.VarChar(255)
+  draftRevision     Int            @default(1)
+  version           Int            @default(1)
+  publishedRevision Int?
+  publicSlug        String         @unique @default(uuid()) @db.VarChar(191)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  archivedAt        DateTime?
+  integrationPolicy Json?
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  revisions         FormRevision[]
+  // Publishing pointers reference an existing revision inside this form in services.
+  // Exact submission integrity is additionally enforced by a composite FK below.
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, archivedAt, id])
+}
+
+model FormRevision {
+  workspaceId    String           @db.VarChar(191)
+  formId         String           @db.VarChar(191)
+  revision       Int
+  definition     Json?
+  legacySnapshot Json?
+  createdAt      DateTime         @default(now())
+  form           Form             @relation(fields: [workspaceId, formId], references: [workspaceId, id], onDelete: Restrict)
+  submissions    Submission[]
+  analytics      AnalyticsEvent[]
+
+  @@id([workspaceId, formId, revision])
+}
+
+model Submission {
+  id             String       @id @default(uuid()) @db.VarChar(191)
+  workspaceId    String       @db.VarChar(191)
+  formId         String       @db.VarChar(191)
+  formRevision   Int
+  submittedAt    DateTime     @default(now())
+  record         Json?
+  deletedAt      DateTime?
+  purgedAt       DateTime?
+  idempotencyKey String?      @db.VarChar(128)
+  requestHash    String?      @db.Char(64)
+  revision       FormRevision @relation(fields: [workspaceId, formId, formRevision], references: [workspaceId, formId, revision], onDelete: Restrict)
+
+  @@unique([workspaceId, formId, idempotencyKey])
+  @@index([workspaceId, formId, id])
+  @@index([workspaceId, formId, submittedAt])
+  @@index([workspaceId, deletedAt, submittedAt])
+}
+
+model AnalyticsEvent {
+  id           String       @id @db.VarChar(191)
+  workspaceId  String       @db.VarChar(191)
+  formId       String       @db.VarChar(191)
+  formRevision Int
+  sessionId    String       @db.VarChar(191)
+  type         String       @db.VarChar(32)
+  occurredAt   DateTime
+  event        Json
+  revision     FormRevision @relation(fields: [workspaceId, formId, formRevision], references: [workspaceId, formId, revision], onDelete: Restrict)
+
+  @@index([workspaceId, formId, occurredAt])
+  @@index([occurredAt])
+}
+
+model ApiCredential {
+  id          String    @id @default(uuid()) @db.VarChar(191)
+  workspaceId String    @db.VarChar(191)
+  createdBy   String    @db.VarChar(191)
+  name        String
+  keyHash     String    @unique @db.Char(64)
+  prefix      String    @db.VarChar(24)
+  scopes      Json
+  formIds     Json?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+}
+
+model AuditEvent {
+  id          String    @id @default(uuid()) @db.VarChar(191)
+  workspaceId String    @db.VarChar(191)
+  actorId     String    @db.VarChar(191)
+  action      String    @db.VarChar(64)
+  resourceId  String    @db.VarChar(191)
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+}
+
+model RateLimitBucket {
+  key       String   @id @db.Char(64)
+  count     Int      @default(1)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}

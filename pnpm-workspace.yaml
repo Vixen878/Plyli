@@ -1,0 +1,13 @@
+packages:
+  - packages/*
+
+overrides:
+  next>postcss: 8.5.32
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - esbuild
+  - sharp
+  - '@tailwindcss/oxide'

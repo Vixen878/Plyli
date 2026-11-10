@@ -1,0 +1,18 @@
+node_modules/
+.next/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+*.tsbuildinfo
+graphify-out/
+.tmp/
+dependency-audit.json
+
+# Private development notes and agent/tool scratch output (keep public docs tracked).
+.local-notes/
+.aistudio/
+packages/sdk/dist/
+public/downloads/*.tgz
+*.tgz

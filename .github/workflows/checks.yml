@@ -1,0 +1,51 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-only-password
+          MYSQL_DATABASE: plyli_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -ptest-only-password"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      DATABASE_URL: mysql://root:test-only-password@127.0.0.1:3306/plyli_test
+      TEST_DATABASE_URL: mysql://root:test-only-password@127.0.0.1:3306/plyli_test
+      BETTER_AUTH_URL: http://localhost:3011
+      BETTER_AUTH_SECRET: ci-only-authentication-secret-not-for-deployment
+      PLYLI_BACKUP_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install MySQL utilities
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:validate
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:sdk
+      - run: pnpm test:docs
+      - run: pnpm test:integration
+      - run: pnpm test:consumer
+      - run: pnpm build
+      - name: Check generated contracts
+        run: git diff --exit-code -- public/openapi.json packages/sdk/src/generated packages/sdk/src/engine.ts

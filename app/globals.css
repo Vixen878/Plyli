@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* Creator controls use the same charcoal borders, paper fills and tactile
+   shadows as the established builder. Native inputs retain keyboard semantics. */
+.paper-control input[type="checkbox"],
+.paper-control input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border: 2px solid #2A2623;
+  background-color: #FFFDF9;
+  border-radius: .375rem;
+  box-shadow: 1.5px 1.5px 0 #2A2623;
+  cursor: pointer;
+  transition: background-color 150ms, box-shadow 150ms;
+  vertical-align: middle;
+}
+.paper-control input[type="checkbox"]:checked {
+  background-color: #E86D52;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m4 10 4 4 8-9' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+}
+.paper-control input[type="radio"] { border-radius: 50%; }
+.paper-control input[type="radio"]:checked { background: #E86D52; box-shadow: inset 0 0 0 3px #FFFDF9, 1.5px 1.5px 0 #2A2623; }
+.paper-control input[type="checkbox"]:focus-visible,
+.paper-control input[type="radio"]:focus-visible { outline: 2px solid #D4573B; outline-offset: 3px; }
+.paper-control input:disabled { opacity: .45; cursor: not-allowed; }
+.paper-control select.paper-field {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m5 7 5 5 5-5' fill='none' stroke='%232A2623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right .75rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+}
+
+@layer base {
+  body {
+    background-color: #FAF6F0;
+    background-image: radial-gradient(rgba(42, 38, 35, 0.055) 1px, transparent 0);
+    background-size: 22px 22px;
+    color: #2A2623;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display), sans-serif;
+  }
+}
