@@ -1,9 +1,22 @@
 {
   "name": "@plyli/sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Typed Plyli HTTP client and standalone form engine",
   "type": "module",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vixen878/Plyli.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/Vixen878/Plyli/tree/main/packages/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/Vixen878/Plyli/issues"
+  },
+  "keywords": ["plyli", "forms", "typescript", "sdk", "form-engine"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "main": "./dist/client.js",
   "types": "./dist/client.d.ts",
   "exports": {

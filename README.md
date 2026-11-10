@@ -31,19 +31,25 @@ Developers manages scoped API keys. Integration settings control public/private 
 
 ## SDK and API
 
-Browse `/api-reference` for endpoint schemas and examples, or download `/openapi.json`. The SDK is distributed as a downloadable archive and is **not published to the package registry**.
+Browse `/api-reference` for endpoint schemas and examples, or download `/openapi.json`.
+
+### Official npm package (recommended)
 
 ```sh
-pnpm sdk:package
+pnpm add @plyli/sdk
 ```
 
-This builds `packages/sdk` and generates the download under `public/downloads`. In a consuming application, install the archive from your Plyli instance:
+The [official SDK](https://www.npmjs.com/package/@plyli/sdk) works with any compatible Plyli server. Set `baseUrl` on `PlyliClient` to the server you want to use, including a self-hosted deployment.
+
+### Self-hosted SDK archive (alternative)
+
+If you need the SDK build that ships with a particular instance, install its versioned archive.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.0.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
 ```
 
-Replace the example origin with your actual Plyli server. Alternatively, download the archive and run `pnpm add '<full-path-to-downloaded-archive>'` from the consumer project. See the [SDK guide](packages/sdk/README.md) and [integration guide](docs/DEVELOPER-EXPERIENCE.md).
+Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. To rebuild the archive for your own instance, run `pnpm sdk:package` from the Plyli repository. See the [SDK guide](packages/sdk/README.md) and [integration guide](docs/DEVELOPER-EXPERIENCE.md).
 
 ## Checks and migrations
 
@@ -72,7 +78,7 @@ Before public deployment, configure trusted proxy headers, request limits, abuse
 
 Review the dependency audit before a release. Known advisories remain in Prisma’s deepmerge-ts configuration dependency and ESLint’s minimatch dependencies. Their published fixes require major dependency changes; review them before a release rather than forcing incompatible overrides.
 
-For a standard production server, run `pnpm build` followed by `pnpm start`, matching its port/origin to your authentication configuration. If deploying the generated standalone server, include `public/` and `.next/static/` beside the standalone output as required by Next.js. The generated SDK archive is a runtime asset under `public/downloads`, not a registry publication.
+For a standard production server, run `pnpm build` followed by `pnpm start`, matching its port/origin to your authentication configuration. If deploying the generated standalone server, include `public/` and `.next/static/` beside the standalone output as required by Next.js. The generated SDK archive is served from `public/downloads`.
 
 `pnpm dev` also prepares the SDK download and OpenAPI document, so a fresh checkout has working documentation and download links.
 

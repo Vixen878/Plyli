@@ -4,15 +4,27 @@ Plyli provides a typed HTTP client and a standalone form engine. Use the client 
 
 ## Install
 
-Requires an ESM project and Node.js 22 or later. The SDK is distributed as a downloadable archive, not a published registry package. Install from your actual Plyli instance:
+Requires an ESM project and Node.js 22 or later.
+
+### Official npm package (recommended)
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.0.tgz'
+pnpm add @plyli/sdk
 ```
 
-For a new Node.js TypeScript project, add the compiler and Node declarations with `pnpm add -D typescript @types/node` if they are not already configured.
+Set `baseUrl` on `PlyliClient` to any compatible Plyli server, including a self-hosted deployment.
 
-You can also download the archive and run `pnpm add '<full-path-to-downloaded-archive>'`. Use `@plyli/sdk` for the client and `@plyli/sdk/engine` for the engine. A CommonJS application can load these ESM exports using dynamic `import()`.
+### Self-hosted SDK archive (alternative)
+
+If you need the SDK build that ships with a particular instance, install its versioned archive.
+
+```sh
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
+```
+
+Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. You can also download it and run `pnpm add '<full-path-to-downloaded-archive>'`.
+
+For a new Node.js TypeScript project, add the compiler and Node declarations with `pnpm add -D typescript @types/node` if they are not already configured. Use `@plyli/sdk` for the client and `@plyli/sdk/engine` for the engine. A CommonJS application can load these ESM exports using dynamic `import()`.
 
 ## Server-side API client
 

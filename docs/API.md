@@ -8,6 +8,24 @@ Contracts: `core/contracts.ts`; OpenAPI: `/openapi.json` (generated using Zod JS
 
 The running instance’s `/api-reference` defaults to TypeScript SDK examples for every operation, with TypeScript Fetch and cURL alternatives. See the [SDK guide](../packages/sdk/README.md) for initialization, public and session access, pagination, errors, and the standalone engine. Stable operation identifiers match SDK method names in `packages/sdk/src/operations.ts`; `pnpm test:docs` compiles every generated TypeScript example against public SDK declarations.
 
+### Official npm package (recommended)
+
+```sh
+pnpm add @plyli/sdk
+```
+
+Configure `PlyliClient` with the `baseUrl` of any compatible Plyli server, including a self-hosted deployment.
+
+### Self-hosted SDK archive (alternative)
+
+If you need the SDK build that ships with a specific instance, install its versioned archive. Replace the example origin with that server's URL.
+
+```sh
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
+```
+
+The archive is optional for self-hosted deployments.
+
 ## Authentication
 
 Dashboard users send Better Auth cookies (`better-auth.session_token`, or `__Secure-better-auth.session_token` in production HTTPS). All cookie-authenticated mutation requests must send `Origin` exactly matching `BETTER_AUTH_URL` (normal same-origin browser fetch does this). Bearer credentials send `Authorization: Bearer plyli_...`; they are server-to-server secrets and never belong in client bundles. Invalid Authorization headers do not fall back to a session. Public endpoints below are anonymous and return only published definitions/receipts.

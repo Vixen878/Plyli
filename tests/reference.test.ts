@@ -33,8 +33,13 @@ test('reference origins match SDK transport policy and quote generated source sa
   assert.ok(makeExample(endpoint, 'TypeScript Fetch', origin, 'session').includes(`fetch(${JSON.stringify(`${origin}/api/v1/workspaces/personal`)}`));
 });
 
-test('public installation guides use the versioned SDK archive advertised by the UI', () => {
-  for (const file of ['README.md', 'packages/sdk/README.md']) assert.ok(readFileSync(file, 'utf8').includes(sdkArchivePath));
+test('public installation guides recommend npm before the versioned SDK archive', () => {
+  for (const file of ['README.md', 'packages/sdk/README.md', 'docs/API.md', 'docs/DEVELOPER-EXPERIENCE.md']) {
+    const guide = readFileSync(file, 'utf8');
+    const registryInstall = guide.indexOf('pnpm add @plyli/sdk');
+    assert.ok(registryInstall >= 0, `${file} must include the npm installation command`);
+    assert.ok(guide.indexOf(sdkArchivePath) > registryInstall, `${file} must list the current archive after npm`);
+  }
 });
 
 test('rendered request bodies validate against shared contracts and sample answers match the form', () => {

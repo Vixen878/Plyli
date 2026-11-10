@@ -30,7 +30,7 @@ Legacy browser storage keys and old backup markers remain readable. New exports 
 
 `/api/v1` is the stable REST boundary. Shared contracts generate the OpenAPI document and feed the rendered `/api-reference`. Cookie mutations require the configured origin; scoped bearer requests are server-to-server. Lists use bounded cursors; JSON body limits, shared rate buckets and structured errors apply at the boundary.
 
-`packages/sdk` is a pnpm workspace package. Its generated core sources come from `pnpm sdk:sync`; it does not maintain a second validation engine. The SDK's only runtime dependency is Zod. Built artifacts and archives are regenerated, with declarations and explicit ESM exports. No registry publication is implied by the scoped package name.
+`packages/sdk` is a pnpm workspace package. Its generated core sources come from `pnpm sdk:sync`; it does not maintain a second validation engine. The SDK's only runtime dependency is Zod. Builds regenerate the SDK archive with declarations and explicit ESM exports. Released versions are available from [npm](https://www.npmjs.com/package/@plyli/sdk).
 
 pnpm uses the hoisted linker specified in `.npmrc` so Next.js standalone packaging works on Windows without symlink privileges. The workspace lockfile pins dependency resolution; linker choice does not change the application stack or the standalone engine contract.
 
