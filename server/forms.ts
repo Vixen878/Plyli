@@ -27,9 +27,14 @@ export class FormService {
   constructor(readonly database: PrismaClient) {}
 
   async provisionWorkspace(userId: string) {
-    const workspace = await this.database.workspace.upsert({
-      where: { personalOwnerId: userId }, update: {},
-      create: { name: 'My workspace', personalOwnerId: userId, memberships: { create: { userId, role: 'OWNER' } } },
+    const workspace = await this.database.$transaction(async (tx) => {
+      // The user row already exists on the first visit. Lock it before checking for a workspace.
+      await tx.$queryRaw`SELECT id FROM \`User\` WHERE id = ${userId} FOR UPDATE`;
+      const existing = await tx.workspace.findUnique({ where: { personalOwnerId: userId } });
+      if (existing) return existing;
+      return tx.workspace.create({
+        data: { name: 'My workspace', personalOwnerId: userId, memberships: { create: { userId, role: 'OWNER' } } },
+      });
     });
     return { id: workspace.id, name: workspace.name, role: 'OWNER' as const };
   }

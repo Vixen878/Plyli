@@ -14,7 +14,7 @@ import { z } from 'zod';
 test('MySQL persistence, tenant boundaries and immutable history', async (t) => {
   assert.ok(new URL(process.env.DATABASE_URL ?? '').pathname.endsWith('_test'));
   const db = new PrismaClient(); const service = new FormService(db);
-  const userIds = [randomUUID(), randomUUID(), randomUUID()];
+  const userIds = Array.from({ length: 4 }, () => randomUUID());
   const spaces: string[] = [];
   const owner: Principal = { kind: 'session', userId: userIds[0] };
   const other: Principal = { kind: 'session', userId: userIds[1] };
@@ -52,9 +52,37 @@ test('MySQL persistence, tenant boundaries and immutable history', async (t) => 
       const results = await Promise.allSettled(Array.from({ length: 12 }, () => service.provisionWorkspace(userIds[2])));
       const created = results.flatMap((result) => result.status === 'fulfilled' ? [result.value.id] : []);
       spaces.push(...new Set(created));
-      assert.equal(results.filter((result) => result.status === 'rejected').length, 0);
+      assert.deepEqual(results.flatMap((result) => result.status === 'rejected' ? [result.reason] : []), []);
       assert.equal(new Set(created).size, 1);
       assert.equal(await db.membership.count({ where: { workspaceId: created[0], userId: userIds[2], role: 'OWNER' } }), 1);
+    });
+
+    await t.test('independent connections provision the same workspace without overwriting it on later visits', async () => {
+      const userId = userIds[3];
+      const secondConnection = new PrismaClient();
+      try {
+        const services = [service, new FormService(secondConnection)];
+        await secondConnection.$connect();
+        const visits = await Promise.allSettled(Array.from({ length: 12 }, (_, index) => services[index % 2].provisionWorkspace(userId)));
+        const rows = await db.workspace.findMany({
+          where: { personalOwnerId: userId },
+          include: { memberships: { select: { userId: true, role: true } } },
+        });
+        spaces.push(...rows.map((row) => row.id));
+        assert.deepEqual(visits.flatMap((visit) => visit.status === 'rejected' ? [visit.reason] : []), []);
+        assert.equal(rows.length, 1);
+        const [workspace] = rows;
+        assert.deepEqual(workspace.memberships, [{ userId, role: 'OWNER' }]);
+        const expected = { id: workspace.id, name: 'My workspace', role: 'OWNER' };
+        for (const visit of visits) assert.deepEqual(visit, { status: 'fulfilled', value: expected });
+
+        const name = 'Renamed workspace';
+        await db.workspace.update({ where: { id: workspace.id }, data: { name } });
+        assert.deepEqual(await services[1].provisionWorkspace(userId), { ...expected, name });
+        assert.equal(await db.membership.count({ where: { workspaceId: workspace.id, userId, role: 'OWNER' } }), 1);
+      } finally {
+        await secondConnection.$disconnect();
+      }
     });
 
     await t.test('cross-workspace and viewer writes cannot access/change forms', async () => {
