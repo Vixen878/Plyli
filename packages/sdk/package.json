@@ -1,6 +1,6 @@
 {
   "name": "@plyli/sdk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Typed Plyli HTTP client and standalone form engine",
   "type": "module",
   "repository": {

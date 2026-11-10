@@ -19,7 +19,7 @@ Set `baseUrl` on `PlyliClient` to any compatible Plyli server, including a self-
 If you need the SDK build that ships with a particular instance, install its versioned archive.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. You can also download it and run `pnpm add '<full-path-to-downloaded-archive>'`.
