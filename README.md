@@ -46,7 +46,7 @@ The [official SDK](https://www.npmjs.com/package/@plyli/sdk) works with any comp
 If you need the SDK build that ships with a particular instance, install its versioned archive.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. To rebuild the archive for your own instance, run `pnpm sdk:package` from the Plyli repository. See the [SDK guide](packages/sdk/README.md) and [integration guide](docs/DEVELOPER-EXPERIENCE.md).

@@ -17,7 +17,7 @@ The `@plyli/sdk` entry point provides the HTTP client, and `@plyli/sdk/engine` p
 To use the build that ships with a particular instance, install the versioned archive it serves.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.1.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. See the [SDK guide](../packages/sdk/README.md) for runtime requirements and usage examples.
