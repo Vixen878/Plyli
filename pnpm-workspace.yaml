@@ -3,6 +3,7 @@ packages:
 
 overrides:
   next>postcss: 8.5.32
+  '@prisma/config>deepmerge-ts': 8.0.2
 
 onlyBuiltDependencies:
   - '@prisma/client'

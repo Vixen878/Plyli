@@ -402,6 +402,7 @@ export default function PlyliRecoveryWorkspace() {
     setResponses(res.state.responses);
     setRevisions(res.state.revisions);
     setAnalyticsEvents(res.state.analyticsEvents || []);
+    setLastSavedNotice('Backup imported on this device.');
     return { valid: true };
   };
 

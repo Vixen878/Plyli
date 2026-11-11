@@ -207,6 +207,123 @@ test('MySQL persistence, tenant boundaries and immutable history', async (t) => 
       assert.ok(await db.formRevision.count({ where: { workspaceId, formId: definition.id } }) >= 3);
       assert.ok(await db.auditEvent.count({ where: { workspaceId } }) >= 3);
     });
+
+    await t.test('custom links remain reserved and resolve the published revision after renaming', async () => {
+      const id = randomUUID();
+      const draft = await service.create(owner, workspaceId, { definition: { ...definition, id, title: 'Workshop registration' } });
+      const slug = `workshop-${id}`;
+      const nextSlug = `event-${id}`;
+      await assert.rejects(service.updateSharing(other, workspaceId, id, { slug }), { status: 404 });
+      await service.updateSharing(owner, workspaceId, id, { slug });
+      await assert.rejects(service.getPublished(slug), { status: 404 });
+      const published = await service.publish(owner, workspaceId, id, draft.version);
+      await service.updateSharing(owner, workspaceId, id, { slug: nextSlug });
+      for (const alias of [draft.publicSlug, slug, nextSlug]) {
+        assert.equal((await service.getPublished(alias)).definition.id, id);
+      }
+      const second = await service.create(owner, workspaceId, { definition: { ...definition, id: randomUUID() } });
+      await assert.rejects(service.updateSharing(owner, workspaceId, second.definition.id, { slug }), { code: 'SLUG_TAKEN' });
+      await service.archive(owner, workspaceId, id, published.version);
+      await assert.rejects(service.getPublished(slug), { status: 404 });
+    });
+
+    await t.test('one identified response survives concurrent attempts and aliases, with retry and anonymous policies', async () => {
+      const id = randomUUID();
+      const created = await service.create(owner, workspaceId, { definition: { ...definition, id } });
+      const published = await service.publish(owner, workspaceId, id, created.version);
+      const alias = `respond-${id}`;
+      assert.equal((await service.updateSharing(owner, workspaceId, id, { slug: alias })).submissionPolicy, 'one');
+      const payload = { revision: published.publishedRevision, answers: { [definition.questions[0].id]: 'Ada' } };
+      const respondent = `account:${userIds[1]}`;
+      const keys = [randomUUID(), randomUUID()];
+      const attempts = await Promise.allSettled([
+        service.submit(published.publicSlug, payload, keys[0], undefined, respondent),
+        service.submit(alias, payload, keys[1], undefined, respondent),
+      ]);
+      const winner = attempts.findIndex((attempt) => attempt.status === 'fulfilled');
+      assert.notEqual(winner, -1);
+      const loser = attempts[1 - winner];
+      assert.equal(loser.status, 'rejected');
+      if (loser.status === 'rejected') assert.equal(loser.reason.code, 'ALREADY_SUBMITTED');
+      assert.equal((await service.submit(alias, payload, keys[winner], undefined, respondent)).replayed, true);
+      await service.submit(alias, payload, randomUUID());
+      await service.submit(alias, payload, randomUUID());
+      await service.updateSharing(owner, workspaceId, id, { submissionPolicy: 'verified' });
+      await assert.rejects(service.submit(alias, payload, randomUUID()), { code: 'RESPONDENT_REQUIRED' });
+      const origin = 'http://localhost:3011';
+      const publicRequest = (headers: Record<string, string>) => handleApiRequest(new Request(`${origin}/api/v1/public/forms/${alias}/submissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID(), ...headers },
+        body: JSON.stringify(payload),
+      }), ['public', 'forms', alias, 'submissions'], {
+        database: db,
+        origin,
+        sessionUserId: async (headers) => headers.get('cookie') === 'verified-session' ? userIds[0] : null,
+      });
+      assert.equal((await publicRequest({ 'X-Plyli-Respondent': 'unverified-caller' })).status, 403);
+      assert.equal((await publicRequest({ cookie: 'verified-session', Origin: 'https://example.invalid' })).status, 403);
+      assert.equal((await publicRequest({ cookie: 'verified-session', Origin: origin })).status, 201);
+      const repeated = await publicRequest({ cookie: 'verified-session', Origin: origin });
+      assert.equal(repeated.status, 409);
+      assert.equal((await repeated.json()).error.code, 'ALREADY_SUBMITTED');
+      const submissionKey = await service.createKey(owner, workspaceId, { name: 'Respondent fixture', scopes: ['submissions:write'], formIds: [id] });
+      const path = ['workspaces', workspaceId, 'forms', id, 'submissions'];
+      const integrationRequest = (headers: Record<string, string>, key = randomUUID()) => handleApiRequest(new Request(`${origin}/api/v1/${path.join('/')}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, ...headers },
+        body: JSON.stringify(payload),
+      }), path, {
+        database: db, origin, sessionUserId: async () => userIds[0],
+      });
+      const auth = { Authorization: `Bearer ${submissionKey.secret}` };
+      const identity = { ...auth, 'X-Plyli-Respondent': 'external-respondent' };
+      const idempotencyKey = randomUUID();
+      assert.equal((await integrationRequest({ ...auth })).status, 403);
+      assert.equal((await integrationRequest({ Origin: origin, 'X-Plyli-Respondent': 'external-respondent' })).status, 403);
+      assert.equal((await integrationRequest(identity, idempotencyKey)).status, 201);
+      assert.equal((await integrationRequest(identity, idempotencyKey)).status, 200);
+      assert.equal((await integrationRequest(identity)).status, 409);
+      assert.equal((await integrationRequest({ ...auth, 'X-Plyli-Respondent': 'different-respondent' }, idempotencyKey)).status, 409);
+      await service.updateSharing(owner, workspaceId, id, { submissionPolicy: 'multiple' });
+      await service.submit(alias, payload, randomUUID(), undefined, respondent);
+      assert.equal(await db.submission.count({ where: { workspaceId, formId: id } }), 6);
+    });
+
+    await t.test('closing responses keeps the published link and accepted receipts available', async () => {
+      const id = randomUUID();
+      const created = await service.create(owner, workspaceId, { definition: { ...definition, id } });
+      const published = await service.publish(owner, workspaceId, id, created.version);
+      const slug = published.publicSlug;
+      const payload = { revision: published.publishedRevision, answers: { [definition.questions[0].id]: 'Ada' } };
+      const respondent = `account:${userIds[1]}`;
+      const key = randomUUID();
+      const settings = await service.sharing(owner, workspaceId, id);
+      assert.equal(settings.responsesClosed, false);
+      assert.equal(settings.responsesEndAt, null);
+      const first = await service.submit(slug, payload, key, undefined, respondent);
+      const { form } = await service.getPublished(slug);
+      assert.equal(await service.hasResponded(form, respondent), true);
+      assert.equal(await service.hasResponded(form, `account:${userIds[0]}`), false);
+      assert.equal(await service.countResponses(form), 1);
+      const submittedMessage = 'Your seat is reserved.';
+      const closedMessage = 'Registration has ended.';
+      await service.updateSharing(owner, workspaceId, id, { submittedMessage, closedMessage });
+      await assert.rejects(service.submit(slug, payload, randomUUID(), undefined, respondent), { code: 'ALREADY_SUBMITTED', message: submittedMessage });
+      const end = new Date(Date.now() - 60_000).toISOString();
+      const updated = await service.updateSharing(owner, workspaceId, id, { responsesEndAt: end });
+      assert.equal(updated.responsesEndAt, end);
+      await assert.rejects(service.submit(slug, payload, randomUUID()), { code: 'FORM_CLOSED', message: closedMessage });
+      assert.equal((await service.submit(slug, payload, key, undefined, respondent)).id, first.id);
+      assert.equal((await service.getPublished(slug)).form.id, id);
+
+      await service.updateSharing(owner, workspaceId, id, { responsesClosed: true, responsesEndAt: null });
+      await assert.rejects(service.submit(slug, payload, randomUUID()), { code: 'FORM_CLOSED' });
+      const future = new Date(Date.now() + 60_000).toISOString();
+      await service.updateSharing(owner, workspaceId, id, { responsesClosed: false, responsesEndAt: future });
+      await service.submit(slug, payload, randomUUID());
+      await db.submission.update({ where: { id: first.id }, data: { deletedAt: new Date() } });
+      assert.equal(await service.countResponses(form), 1);
+    });
   } finally {
     // Delete only fixtures owned by this run, in restrictive-FK order.
     const where = { workspaceId: { in: spaces } };

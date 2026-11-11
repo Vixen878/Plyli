@@ -27,14 +27,74 @@
 .paper-control input[type="checkbox"]:focus-visible,
 .paper-control input[type="radio"]:focus-visible { outline: 2px solid #D4573B; outline-offset: 3px; }
 .paper-control input:disabled { opacity: .45; cursor: not-allowed; }
-.paper-control select.paper-field {
+select:not([multiple], [size]) {
   appearance: none;
-  padding-right: 2.5rem;
+  padding-inline-end: 2.4rem;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m5 7 5 5 5-5' fill='none' stroke='%232A2623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-position: right .75rem center;
+  background-position: right .8rem center;
   background-repeat: no-repeat;
   background-size: 1rem;
 }
+
+select:not([multiple], [size]):dir(rtl) { background-position: left .8rem center; }
+select:not([multiple], [size]):focus-visible { outline: 2px solid #D4573B; outline-offset: 2px; }
+select.paper-themed-select:not([multiple], [size]) { background-image: none; }
+
+@supports (appearance: base-select) {
+  select:not([multiple], [size]), select:not([multiple], [size])::picker(select) { appearance: base-select; }
+  select:not([multiple], [size])::picker-icon { display: none; }
+  select:not([multiple], [size])::picker(select) {
+    margin-block: .3rem;
+    max-height: min(18rem, 50dvh);
+    padding: .25rem;
+    border: 1px solid #2A2623;
+    border-radius: .75rem;
+    background: #FFFDF9;
+    color: #2A2623;
+    box-shadow: 3px 3px 0 #2A2623;
+  }
+  select:not([multiple], [size]) option { min-height: 2.25rem; padding: .4rem .55rem; border-radius: .45rem; gap: .5rem; }
+  select:not([multiple], [size]) option:checked { background: #F6D97A; font-weight: 600; }
+  select:not([multiple], [size]) option:hover,
+  select:not([multiple], [size]) option:focus-visible { background: #F2ECE1; }
+}
+
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: #FAF6F0; }
+  ::-webkit-scrollbar-thumb {
+    background: #9E8775;
+    border: 2px solid #FAF6F0;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #6E5140; }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: #9E8775 #FAF6F0; }
+}
+
+@media (forced-colors: active) {
+  select:not([multiple], [size]) { appearance: auto; background-image: none; }
+  * { scrollbar-color: auto; }
+}
+
+.paper-calendar .rdp-root {
+  --rdp-accent-color: #A13B26;
+  --rdp-accent-background-color: #F6D97A;
+  --rdp-day-width: clamp(2rem, 10vw, 2.55rem);
+  --rdp-day-height: var(--rdp-day-width);
+  --rdp-day_button-width: calc(var(--rdp-day-width) - 2px);
+  --rdp-day_button-height: var(--rdp-day_button-width);
+  --rdp-day_button-border-radius: .6rem;
+  --rdp-selected-border: 1px solid #2A2623;
+}
+.paper-calendar .rdp-selected .rdp-day_button { background: #F6D97A; box-shadow: 1px 1px 0 #2A2623; }
+.paper-calendar .rdp-day_button:hover, .paper-calendar .rdp-button_previous:hover,
+.paper-calendar .rdp-button_next:hover { background: #F2ECE1; }
+.paper-calendar .rdp-day_button:focus-visible, .paper-calendar .rdp-button_previous:focus-visible,
+.paper-calendar .rdp-button_next:focus-visible { outline: 2px solid #D4573B; outline-offset: 1px; }
+.paper-calendar .rdp-caption_label { font-family: var(--font-display), sans-serif; font-weight: 700; }
 
 @layer base {
   body {

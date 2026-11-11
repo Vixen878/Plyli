@@ -19,6 +19,7 @@ import {
   CornerDownLeft,
   GitBranch,
 } from 'lucide-react';
+import { PaperDatePicker } from './paper-date-picker';
 
 interface QuestionRendererProps {
   question: FormQuestion;
@@ -639,16 +640,12 @@ export function QuestionRenderer({
 
         {question.type === 'date' && (
           <div className={`relative sm:max-w-xs ${isCentered ? 'mx-auto' : ''}`}>
-            <label htmlFor={`q-input-${question.id}`} className="sr-only">
-              {question.title}
-            </label>
-            <input
-              id={`q-input-${question.id}`}
-              type="date"
+            <PaperDatePicker
+              label={question.title}
               value={typeof value === 'string' ? value : ''}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={onChange}
               style={getInputStyle()}
-              className={`w-full text-base font-mono font-semibold focus:outline-none transition-colors ${inputRadiusClass}`}
+              className={`text-base font-mono transition-colors ${inputRadiusClass}`}
             />
           </div>
         )}
@@ -663,14 +660,16 @@ export function QuestionRenderer({
                 id={`q-input-${question.id}`}
                 value={typeof value === 'string' ? value : ''}
                 onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') event.stopPropagation(); }}
                 style={{
                   ...getInputStyle(),
+                  paddingInlineEnd: '2.75rem',
                   backgroundColor:
                     tokens.inputBackground === 'transparent'
                       ? tokens.cardBackground
                       : tokens.inputBackground,
                 }}
-                className={`w-full appearance-none pr-10 text-base font-semibold focus:outline-none cursor-pointer transition-colors ${inputRadiusClass}`}
+                className={`paper-themed-select w-full text-base font-semibold cursor-pointer transition-colors ${inputRadiusClass}`}
               >
                 <option
                   value=""

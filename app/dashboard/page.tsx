@@ -13,5 +13,5 @@ export default async function DashboardPage() {
   const service = new FormService(db);
   const workspace = await service.provisionWorkspace(session.user.id);
   const forms = await service.list({ kind: 'session', userId: session.user.id }, workspace.id, 100);
-  return <AccountWorkspace userName={session.user.name} workspaceId={workspace.id} initialForms={forms.data} initialCursor={forms.nextCursor} />;
+  return <AccountWorkspace userName={session.user.name} userImage={session.user.image} workspaceId={workspace.id} initialForms={forms.data} initialCursor={forms.nextCursor} />;
 }

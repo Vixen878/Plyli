@@ -10,6 +10,7 @@ import { processFormSubmission } from '@/core/submissions';
 import { validateSubmission } from '@/core/validation';
 import { parseIntegrationPolicy, validateContext } from '@/core/integration-policy';
 import { sanitizeSessionAttribution } from '@/core/attribution';
+import { defaultClosedMessage, defaultSubmittedMessage, isResponseCollectionClosed, sharingUpdateSchema, submissionPolicySchema } from '@/lib/form-sharing';
 import type { FormSchema } from '@/core/types';
 import { ApiError } from './errors';
 import { authorize, authorizeForm, generateApiKey, hashSecret, type Principal } from './security';
@@ -63,6 +64,56 @@ export class FormService {
     const form = await this.database.form.findFirst({ where: { workspaceId, id: formId, archivedAt: null } });
     if (!form) throw notFound();
     return this.document(form);
+  }
+
+  async sharing(principal: Principal, workspaceId: string, formId: string) {
+    await authorizeForm(this.database, principal, workspaceId, formId, 'forms:read');
+    const form = await this.database.form.findFirst({ where: { id: formId, workspaceId, archivedAt: null } });
+    if (!form) throw notFound();
+    return {
+      slug: form.shareSlug ?? form.publicSlug,
+      customSlug: form.shareSlug,
+      published: form.publishedRevision !== null,
+      publicAccess: parseIntegrationPolicy(form.integrationPolicy).mode === 'public',
+      submissionPolicy: submissionPolicySchema.parse(form.submissionPolicy),
+      responsesClosed: form.responsesClosed,
+      responsesEndAt: form.responsesEndAt?.toISOString() ?? null,
+      closedMessage: form.closedMessage,
+      submittedMessage: form.submittedMessage,
+    };
+  }
+
+  async updateSharing(principal: Principal, workspaceId: string, formId: string, input: unknown) {
+    const { slug, responsesEndAt, ...settings } = sharingUpdateSchema.parse(input);
+    await authorizeForm(this.database, principal, workspaceId, formId, slug ? 'forms:publish' : 'forms:write');
+    try {
+      await this.database.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM Form WHERE id = ${formId} AND workspaceId = ${workspaceId} FOR UPDATE`;
+        const form = await tx.form.findFirst({ where: { id: formId, workspaceId, archivedAt: null } });
+        if (!form) throw notFound();
+        if (slug) {
+          const [alias, legacy] = await Promise.all([
+            tx.formSlug.findUnique({ where: { slug } }),
+            tx.form.findUnique({ where: { publicSlug: slug }, select: { id: true } }),
+          ]);
+          if (legacy || (alias && alias.formId !== formId)) {
+            throw new ApiError(409, 'SLUG_TAKEN', 'That link is already in use. Choose another slug.');
+          }
+          if (!alias) await tx.formSlug.create({ data: { slug, formId } });
+        }
+        await tx.form.update({ where: { id: formId }, data: {
+          shareSlug: slug,
+          ...settings,
+          responsesEndAt: responsesEndAt ? new Date(responsesEndAt) : responsesEndAt,
+        } });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ApiError(409, 'SLUG_TAKEN', 'That link is already in use. Choose another slug.');
+      }
+      throw error;
+    }
+    return this.sharing(principal, workspaceId, formId);
   }
 
   async create(principal: Principal, workspaceId: string, input: unknown) {
@@ -138,7 +189,7 @@ export class FormService {
   }
 
   async getPublished(slug: string, principal?: Principal) {
-    const form = await this.database.form.findFirst({ where: { publicSlug: slug, archivedAt: null, publishedRevision: { not: null } } });
+    const form = await this.findPublishedForm(slug);
     if (!form || form.publishedRevision === null) throw notFound();
     if (principal) await authorizeForm(this.database, principal, form.workspaceId, form.id, 'forms:read');
     else if (parseIntegrationPolicy(form.integrationPolicy).mode === 'private') throw notFound();
@@ -146,16 +197,36 @@ export class FormService {
     return { form, definition: publishableFormSchema.parse(revision.definition) };
   }
 
-  async submit(slug: string, input: unknown, idempotencyKey: string, principal?: Principal) {
+  private findPublishedForm(slug: string) {
+    return this.database.form.findFirst({ where: {
+      OR: [{ publicSlug: slug }, { slugAliases: { some: { slug } } }],
+      archivedAt: null, publishedRevision: { not: null },
+    } });
+  }
+
+  async hasResponded(form: { id: string; workspaceId: string }, respondentId: string, database: Prisma.TransactionClient = this.database) {
+    const respondentKey = hashSecret(`${form.id}:${respondentId}`);
+    return Boolean(await database.submission.findUnique({
+      where: { workspaceId_formId_respondentKey: { workspaceId: form.workspaceId, formId: form.id, respondentKey } },
+      select: { id: true },
+    }));
+  }
+
+  countResponses(form: { id: string; workspaceId: string }) {
+    return this.database.submission.count({ where: { workspaceId: form.workspaceId, formId: form.id, deletedAt: null } });
+  }
+
+  async submit(slug: string, input: unknown, idempotencyKey: string, principal?: Principal, respondentId?: string) {
     const payload = submissionInputSchema.parse(input);
     // Submission-only credentials need not also receive draft/read privileges.
-    const formRow = await this.database.form.findFirst({ where: { publicSlug: slug, archivedAt: null, publishedRevision: { not: null } } });
+    const formRow = await this.findPublishedForm(slug);
     if (!formRow || formRow.publishedRevision === null) throw notFound();
     if (principal) await authorizeForm(this.database, principal, formRow.workspaceId, formRow.id, 'submissions:write');
     else if (parseIntegrationPolicy(formRow.integrationPolicy).mode === 'private') throw notFound();
     const stored = await this.database.formRevision.findUniqueOrThrow({ where: { workspaceId_formId_revision: { workspaceId: formRow.workspaceId, formId: formRow.id, revision: formRow.publishedRevision } } });
     const form = formRow; const definition = publishableFormSchema.parse(stored.definition);
     const requestHash = hashSecret(JSON.stringify(payload));
+    const respondentKey = respondentId ? hashSecret(`${form.id}:${respondentId}`) : null;
     return this.database.$transaction(async (tx) => {
       // A locking current read serializes against publish/unpublish/archive.
       await tx.$queryRaw`SELECT id FROM Form WHERE id = ${form.id} AND workspaceId = ${form.workspaceId} FOR UPDATE`;
@@ -169,7 +240,18 @@ export class FormService {
       if (existing) {
         if (existing.deletedAt) throw new ApiError(410, 'SUBMISSION_DELETED', 'This submission was deleted; its idempotency key cannot be reused.');
         if (existing.requestHash !== requestHash) throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'This idempotency key was already used for another payload.');
+        if (existing.respondentKey && existing.respondentKey !== respondentKey) throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'This submission belongs to a different respondent.');
         return { id: existing.id, formRevision: existing.formRevision, submittedAt: existing.submittedAt.toISOString(), replayed: true };
+      }
+      if (isResponseCollectionClosed(current)) {
+        throw new ApiError(409, 'FORM_CLOSED', current.closedMessage ?? defaultClosedMessage);
+      }
+      if (current.submissionPolicy === 'verified' && !respondentKey) {
+        throw new ApiError(403, 'RESPONDENT_REQUIRED', 'A verified respondent identity is required.');
+      }
+      const limitedKey = current.submissionPolicy === 'multiple' ? null : respondentKey;
+      if (limitedKey && respondentId && await this.hasResponded(form, respondentId, tx)) {
+        throw new ApiError(409, 'ALREADY_SUBMITTED', current.submittedMessage ?? defaultSubmittedMessage);
       }
       if (payload.revision !== current.publishedRevision || current.publishedRevision !== definition.revision) {
         throw new ApiError(409, 'REVISION_CHANGED', 'The published form changed. Reload before submitting.');
@@ -182,7 +264,7 @@ export class FormService {
       });
       if (!result.valid || !result.record) throw new ApiError(422, 'INVALID_ANSWERS', 'Please correct your answers.', result.errors);
       const record = responseRecordSchema.parse({ ...result.record, id: randomUUID() });
-      await tx.submission.create({ data: { id: record.id, workspaceId: form.workspaceId, formId: form.id, formRevision: definition.revision, submittedAt: new Date(record.submittedAt), record: jsonValue(record), idempotencyKey, requestHash } });
+      await tx.submission.create({ data: { id: record.id, workspaceId: form.workspaceId, formId: form.id, formRevision: definition.revision, submittedAt: new Date(record.submittedAt), record: jsonValue(record), idempotencyKey, requestHash, respondentKey: limitedKey } });
       return { id: record.id, formRevision: record.formRevision, submittedAt: record.submittedAt, replayed: false };
     });
   }
@@ -194,11 +276,11 @@ export class FormService {
     return (await this.getPublished(form.publicSlug, principal)).definition;
   }
 
-  async integrationSubmit(principal: Principal, workspaceId: string, formId: string, input: unknown, key: string) {
+  async integrationSubmit(principal: Principal, workspaceId: string, formId: string, input: unknown, key: string, respondentId?: string) {
     await authorizeForm(this.database, principal, workspaceId, formId, 'submissions:write');
     const form = await this.database.form.findFirst({ where: { workspaceId, id: formId, archivedAt: null } });
     if (!form) throw notFound();
-    return this.submit(form.publicSlug, input, key, principal);
+    return this.submit(form.publicSlug, input, key, principal, respondentId);
   }
 
   async validateAnswers(principal: Principal, workspaceId: string, formId: string, input: unknown) {

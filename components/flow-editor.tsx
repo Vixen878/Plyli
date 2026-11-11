@@ -84,6 +84,7 @@ interface FlowEditorProps {
   form: FormSchema;
   initialSelectedQuestionId?: string;
   onSelectBuilderNode?: (nodeId: string) => void;
+  onOpenBuilder?: () => void;
   onUpdateForm: (
     updater: (prev: FormSchema) => FormSchema,
     options?: RecordChangeOptions
@@ -124,6 +125,7 @@ export function FlowEditor({
   form,
   initialSelectedQuestionId,
   onSelectBuilderNode,
+  onOpenBuilder,
   onUpdateForm,
   onLaunchPreview,
   flowOverlay,
@@ -552,6 +554,7 @@ export function FlowEditor({
     handle: { id: string; label: string },
     handleIdx: number
   ) => {
+    if (!e.isPrimary || e.button !== 0) return;
     e.stopPropagation();
     const handleY =
       node.kind === 'welcome' ? 68 : getHandleOffsetY(handleIdx);
@@ -585,6 +588,7 @@ export function FlowEditor({
     if (!isPanning && !draggingNode && !activeConnection) return;
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       if (isPanning && panStartRef.current) {
         const dx = e.clientX - panStartRef.current.clientX;
         const dy = e.clientY - panStartRef.current.clientY;
@@ -637,23 +641,23 @@ export function FlowEditor({
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       if (isPanning) {
         setIsPanning(false);
         panStartRef.current = null;
       }
 
       if (draggingNode) {
-        const movedDistance =
-          Math.abs(draggingNode.currentX - draggingNode.originX) +
-          Math.abs(draggingNode.currentY - draggingNode.originY);
+        const dx = (e.clientX - draggingNode.startClientX) / zoom;
+        const dy = (e.clientY - draggingNode.startClientY) / zoom;
         const finalNodeId = draggingNode.nodeId;
         const finalPos = {
-          x: Math.round(draggingNode.currentX),
-          y: Math.round(draggingNode.currentY),
+          x: Math.round(draggingNode.originX + dx),
+          y: Math.round(draggingNode.originY + dy),
         };
         setDraggingNode(null);
 
-        if (movedDistance > 4) {
+        if (Math.hypot(dx * zoom, dy * zoom) > 4) {
           onUpdateForm(
             (prev) => updateFlowNodePosition(prev, finalNodeId, finalPos),
             { label: 'Move canvas node' }
@@ -683,7 +687,8 @@ export function FlowEditor({
           };
         };
 
-        if (activeConnection.isDragging) {
+        const moved = Math.hypot(e.clientX - activeConnection.startClientX, e.clientY - activeConnection.startClientY);
+        if (activeConnection.isDragging || moved > 6) {
           const el = document.elementFromPoint(e.clientX, e.clientY);
           const targetNodeEl = el?.closest('[data-flow-node-id]');
           const dropTargetId =
@@ -763,9 +768,19 @@ export function FlowEditor({
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    const cancelGesture = () => {
+      panStartRef.current = null;
+      setIsPanning(false);
+      setDraggingNode(null);
+      setActiveConnection(null);
+    };
+    window.addEventListener('pointercancel', cancelGesture);
+    window.addEventListener('blur', cancelGesture);
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', cancelGesture);
+      window.removeEventListener('blur', cancelGesture);
     };
   });
 
@@ -1258,7 +1273,7 @@ export function FlowEditor({
                         return idx >= 0 ? `Q${idx + 1}` : id;
                       })
                       .join(', ')}{' '}
-                    cannot be reached by any branch or default path.{' '}
+                    cannot be reached from the start. Add a branch or change a default destination to include them.{' '}
                   </>
                 )}
                 {derivedGraph.diagnostics.circularPathsDetected && (
@@ -1454,6 +1469,7 @@ export function FlowEditor({
                 ref={canvasViewportRef}
                 data-testid="visual-flow-viewport"
                 onPointerDown={(e) => {
+                  if (!e.isPrimary || e.button !== 0) return;
                   // Only pan when clicking directly on the canvas background
                   const target = e.target as HTMLElement;
                   if (
@@ -1499,7 +1515,7 @@ export function FlowEditor({
                   backgroundPosition: `${pan.x}px ${pan.y}px`,
                   backgroundColor: '#FAF6F0',
                 }}
-                className={`relative h-[640px] w-full overflow-hidden select-none ${
+                className={`relative h-[min(62dvh,640px)] min-h-[360px] w-full touch-none overflow-hidden select-none ${
                   isPanning ? 'cursor-grabbing' : 'cursor-grab'
                 }`}
               >
@@ -1853,6 +1869,7 @@ export function FlowEditor({
                         <div
                           onPointerDown={(e) => {
                             if (
+                              !e.isPrimary || e.button !== 0 ||
                               activeConnection ||
                               (e.target as HTMLElement).closest(
                                 '[data-port-handle]'
@@ -2381,7 +2398,7 @@ export function FlowEditor({
         <aside
           aria-label="Branching rule editor"
           data-testid="canvas-inspector-drawer"
-          className="lg:col-span-5 xl:col-span-4 bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 shadow-[4px_4px_0px_#2A2623] space-y-5 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto"
+          className="lg:col-span-5 xl:col-span-4 bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-4 shadow-[3px_3px_0px_#2A2623] space-y-4 lg:sticky lg:top-28 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto"
         >
           <div className="border-b border-[#2A2623]/15 pb-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -2400,6 +2417,7 @@ export function FlowEditor({
                   {QUESTION_TYPE_META[selectedQuestion.type].label}
                 </span>
               )}
+              {onOpenBuilder && <button type="button" onClick={onOpenBuilder} className="text-xs font-semibold underline underline-offset-4">Edit in Build</button>}
             </div>
             <div>
               <label

@@ -16,6 +16,11 @@ function operation(path: string, method: string, summary: string, output: unknow
   const parameters: unknown[] = Array.from(path.matchAll(/\{([^}]+)\}/g), (m) => ({ name: m[1], in: 'path', required: true, schema: { type: 'string' } }));
   if (options.pagination) parameters.push({ name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }, { name: 'cursor', in: 'query', schema: { type: options.pagination === 'revision' ? 'integer' : 'string' } });
   if (options.idempotency) parameters.push({ name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' } });
+  if (options.idempotency && !options.public) parameters.push({
+    name: 'X-Plyli-Respondent', in: 'header',
+    description: 'Stable opaque respondent identifier verified by the calling application. Scoped API keys only.',
+    schema: { type: 'string', minLength: 1, maxLength: 191, pattern: '^[A-Za-z0-9_-]+$' },
+  });
   if (options.archived) parameters.push({ name: 'archived', in: 'query', schema: { type: 'string', enum: ['true', 'false'], default: 'false' } });
   const successCode = options.created ? '201' : '200';
   const responses: Record<string, unknown> = { [successCode]: { description: 'Success', content: json(output) } };

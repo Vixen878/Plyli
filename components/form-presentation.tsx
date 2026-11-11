@@ -43,6 +43,8 @@ interface FormPresentationProps {
   completionNotice?: string;
   storageLabel?: string;
   publicMode?: boolean;
+  allowRepeat?: boolean;
+  onShare?: () => void;
   form: FormSchema;
   onClosePreview: () => void;
   onSaveResponse: (
@@ -59,6 +61,8 @@ export function FormPresentation({
   completionNotice,
   storageLabel,
   publicMode = false,
+  allowRepeat = true,
+  onShare,
   form,
   onClosePreview,
   onSaveResponse,
@@ -96,13 +100,13 @@ export function FormPresentation({
     const searchStr =
       simulatedUtmQuery !== undefined
         ? simulatedUtmQuery
-        : typeof window !== 'undefined'
+        : publicMode && typeof window !== 'undefined'
         ? window.location.search
         : '';
     const referrerStr =
       simulatedReferrer !== undefined
         ? simulatedReferrer
-        : typeof document !== 'undefined'
+        : publicMode && typeof document !== 'undefined'
         ? document.referrer
         : '';
     const currentOrigin =
@@ -138,8 +142,6 @@ export function FormPresentation({
           `campaign=${attribution.utm.utm_campaign}`,
       ].filter(Boolean);
       setActiveAttributionLabel(parts.join(' · ') || 'UTM active');
-    } else if (attribution.referrerOrigin) {
-      setActiveAttributionLabel(`ref=${attribution.referrerOrigin}`);
     } else {
       setActiveAttributionLabel(null);
     }
@@ -448,7 +450,8 @@ export function FormPresentation({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            {onShare && <PaperButton size="sm" variant="ghost" onClick={onShare}>Share</PaperButton>}
+            {(allowRepeat || currentStage !== 'completion') && <button
               type="button"
               onClick={handleRestart}
               aria-label={publicMode ? 'Restart form' : 'Restart form preview'}
@@ -456,7 +459,7 @@ export function FormPresentation({
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Restart</span>
-            </button>
+            </button>}
             {!publicMode && <PaperButton
               variant="ivory"
               size="sm"
@@ -670,7 +673,7 @@ export function FormPresentation({
                       <MessageSquareText className="w-4 h-4" />
                       <span>View Analytics & Responses</span>
                     </ThemedActionButton>}
-                    <ThemedActionButton
+                    {allowRepeat && <ThemedActionButton
                       appearance={activeTokens}
                       variant="secondary"
                       size="md"
@@ -681,7 +684,7 @@ export function FormPresentation({
                         {form.completionScreen.buttonText ||
                           'Submit Another Test'}
                       </span>
-                    </ThemedActionButton>
+                    </ThemedActionButton>}
                   </div>
                 </div>
               )}

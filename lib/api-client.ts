@@ -6,7 +6,7 @@ export class HttpError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
 }
 export async function apiRequest<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/v1/${path}`, {
+  const response = await fetch(path.startsWith('/api/studio/') ? path : `/api/v1/${path}`, {
     ...init, credentials: 'same-origin', cache: 'no-store',
     headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
   });

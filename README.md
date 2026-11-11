@@ -23,9 +23,9 @@ The default development port is 3000. If it is occupied, run `pnpm dev --port 30
 
 ## Workspaces and forms
 
-The home route opens the authenticated workspace. Create or import forms, edit questions and branching, choose a theme, and save drafts. Publish to share `/f/<publicSlug>`. Editing a draft does not change the published revision until you publish again. Public submissions are validated and normalized on the server using the shared engine.
+In the dashboard, choose **New form → Blank form** or **New form → Paste form JSON**. A Plyli form definition pasted or uploaded as JSON opens as a new draft. Edit the questions, branching, and theme before publishing to share `/f/<publicSlug>`. Editing a draft does not change the published revision until you publish again. Public submissions are validated and normalized on the server using the shared engine.
 
-Preview answers are separate from published responses. Responses can move to recoverable trash; archived forms can be restored without republishing. Version conflicts preserve your draft and let you review competing edits. Portable backups preserve form definitions, revisions and active responses. The `/local` recovery workspace can export data previously saved on the same device; it never automatically overwrites account data.
+Preview answers are separate from published responses. Responses can move to recoverable trash, and archived forms can be restored without republishing. Version conflicts preserve your draft and let you review competing edits. Use **Data settings → Workspace backups** to import or export portable backups with form definitions, revisions, and active responses. For one form, choose **Export backup** from its card menu. The `/local` recovery workspace can export data previously saved on the same device.
 
 Developers manages scoped API keys. Integration settings control public/private access and permitted context fields. Private integrations use a key on the host application's server; the host remains responsible for its own users and authorization.
 

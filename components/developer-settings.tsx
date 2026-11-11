@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, X, ArrowUpRight } from 'lucide-react';
+import { Plus, X, ArrowUpRight, Download, Upload } from 'lucide-react';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/api-client';
 import { keyInfoSchema, scopeSchema, integrationPolicySchema, retentionSettingsSchema, type ApiScope, type FormDocument, type IntegrationPolicy } from '@/core/contracts';
 import { PaperButton } from './paper-primitives';
+import { JsonImportDialog, type JsonImportResult } from './json-import-dialog';
 
 const keyPage = z.object({ data: z.array(keyInfoSchema), nextCursor: z.string().nullable() });
 const createdKey = z.object({ data: z.object({ id: z.string(), secret: z.string(), prefix: z.string(), scopes: z.array(scopeSchema), expiresAt: z.string().nullable() }) });
@@ -64,28 +65,79 @@ export function DeveloperSettings({ workspaceId, forms }: { workspaceId: string;
   </div>;
 }
 
-export function IntegrationSettings({ workspaceId, formId, publicUrl, onSaved }: { workspaceId: string; formId: string; publicUrl?: string; onSaved: (version: number) => void }) {
+export function IntegrationSettings({ workspaceId, formId, publicUrl, disabled, onUnpublish, onSaved }: {
+  workspaceId: string;
+  formId: string;
+  publicUrl?: string;
+  disabled: boolean;
+  onUnpublish: () => void;
+  onSaved: (version: number) => void;
+}) {
   const [savedMode, setSavedMode] = useState<'public' | 'private' | null>(null);
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false);
   const [policy, setPolicy] = useState<IntegrationPolicy | null>(null); const [version, setVersion] = useState(0);
   const [status, setStatus] = useState(''); const [busy, setBusy] = useState(false);
   const path = `workspaces/${workspaceId}/forms/${formId}/integration`;
   useEffect(() => { let live = true; apiRequest(path, policyEnvelope).then((r) => { if (live) { setPolicy(r.data.policy); setSavedMode(r.data.policy.mode); setVersion(r.data.version); } }).catch((error: unknown) => { if (live) setStatus(error instanceof Error ? error.message : 'Unable to load settings.'); }); return () => { live = false; }; }, [path]);
-  return <div className="paper-control max-w-4xl mx-auto p-5 sm:p-8 space-y-6"><h1 className="font-display font-bold text-2xl">Integration settings</h1>{policy && <section className={panelClass}>
+  return <div className="paper-control max-w-4xl mx-auto p-5 sm:p-8 space-y-6">
+    <h1 className="font-display font-bold text-2xl">Integration settings</h1>
+    {publicUrl && <section aria-labelledby="publication-heading" className={panelClass}>
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <div>
+          <h2 id="publication-heading" className="font-display font-bold">Published form</h2>
+          {savedMode && <p className="mt-1 text-sm text-[#6E655E]">{savedMode === 'public' ? 'Available through the published link.' : 'Available to authorized integrations.'}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {savedMode === 'public' && <a href={publicUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-[#2A2623]/35 px-3 py-2 text-xs font-semibold hover:bg-[#FAF6F0] focus-visible:outline-2">
+            Open published form <ArrowUpRight size={14} aria-hidden="true" />
+          </a>}
+          {!confirmUnpublish && <PaperButton variant="ghost" size="sm" disabled={disabled || busy} onClick={() => setConfirmUnpublish(true)}>Unpublish</PaperButton>}
+        </div>
+      </div>
+      {confirmUnpublish && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2A2623]/20 bg-[#FAF6F0] p-3">
+        <p className="text-sm">Unpublish this form? Existing responses will stay available.</p>
+        <div className="flex flex-wrap gap-2">
+          <PaperButton variant="ghost" size="sm" disabled={disabled} onClick={() => setConfirmUnpublish(false)}>Cancel</PaperButton>
+          <PaperButton variant="coral" size="sm" disabled={disabled || busy} onClick={onUnpublish}>Unpublish form</PaperButton>
+        </div>
+      </div>}
+    </section>}
+    {policy && <section className={panelClass}><fieldset disabled={disabled || busy} className="min-w-0 space-y-4">
     <fieldset className="space-y-3"><legend className="font-semibold mb-3">Who can access this form?</legend><label className="flex items-start gap-3 text-sm"><input className="mt-1" type="radio" name="form-access" checked={policy.mode === 'public'} onChange={() => setPolicy({ ...policy, mode: 'public' })} /><span><strong>Public form</strong><span className="block text-[#6E655E] mt-1">Anyone with the published link can read the definition and submit.</span></span></label><label className="flex items-start gap-3 text-sm"><input className="mt-1" type="radio" name="form-access" checked={policy.mode === 'private'} onChange={() => setPolicy({ ...policy, mode: 'private' })} /><span><strong>Private integration</strong><span className="block text-[#6E655E] mt-1">Your backend uses a form-bound API key. Anonymous URLs and public submissions are disabled immediately.</span></span></label></fieldset>
     <div className="border-t border-[#2A2623]/15 pt-5 space-y-4"><h2 className="font-semibold">Allowed contextual metadata</h2><p className="text-sm text-[#6E655E]">Define fields such as eventId or registrationId. Unknown keys and wrong value types are rejected. Required fields need a private integration. Metadata never grants access to a user or workspace.</p>
       {policy.contextFields.map((field, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_110px_auto_auto] gap-3 items-center"><input aria-label={`Context key ${index + 1}`} className={inputClass} placeholder="eventId" value={field.key} onChange={(e) => setPolicy({ ...policy, contextFields: policy.contextFields.map((f, i) => i === index ? { ...f, key: e.target.value } : f) })} /><select aria-label={`Context type ${index + 1}`} className={inputClass} value={field.type} onChange={(e) => { const type = z.enum(['string', 'number', 'boolean']).parse(e.target.value); setPolicy({ ...policy, contextFields: policy.contextFields.map((f, i) => i === index ? { ...f, type } : f) }); }}><option>string</option><option>number</option><option>boolean</option></select><label className="text-xs flex gap-1 items-center"><input type="checkbox" checked={field.required} onChange={(e) => setPolicy({ ...policy, contextFields: policy.contextFields.map((f, i) => i === index ? { ...f, required: e.target.checked } : f) })} />Required</label><button className="text-xs underline" onClick={() => setPolicy({ ...policy, contextFields: policy.contextFields.filter((_, i) => i !== index) })}>Remove</button></div>)}
       <PaperButton size="sm" disabled={policy.contextFields.length >= 20} onClick={() => setPolicy({ ...policy, contextFields: [...policy.contextFields, { key: '', type: 'string', required: false }] })}>Add context field</PaperButton>
       {policy.mode === 'public' && <label className="text-sm flex gap-2 items-start"><input type="checkbox" checked={policy.allowPublicContext} onChange={(e) => setPolicy({ ...policy, allowPublicContext: e.target.checked })} />Allow respondents to supply these fields. Public metadata is unverified and must not be used as identity.</label>}
-    </div><PaperButton variant="coral" disabled={busy} onClick={async () => { setBusy(true); try { const r = await apiRequest(path, policyEnvelope, { method: 'PUT', body: JSON.stringify({ expectedVersion: version, policy }) }); setVersion(r.data.version); setSavedMode(r.data.policy.mode); onSaved(r.data.version); setStatus('Integration policy saved.'); } catch (error) { setStatus(error instanceof Error ? error.message : 'Save failed.'); } finally { setBusy(false); } }}>Save integration policy</PaperButton>
+    </div><PaperButton variant="coral" disabled={disabled || busy} onClick={async () => { setBusy(true); try { const r = await apiRequest(path, policyEnvelope, { method: 'PUT', body: JSON.stringify({ expectedVersion: version, policy }) }); setVersion(r.data.version); setSavedMode(r.data.policy.mode); onSaved(r.data.version); setStatus('Integration policy saved.'); } catch (error) { setStatus(error instanceof Error ? error.message : 'Save failed.'); } finally { setBusy(false); } }}>Save integration policy</PaperButton>
     <p className="text-xs text-[#6E655E]">Policy changes apply immediately. Your application retains responsibility for login, authorization, and business operations.</p>
-  </section>}{publicUrl && savedMode === 'public' && <a href={publicUrl} target="_blank" rel="noreferrer" className="inline-flex text-sm underline underline-offset-4 focus-visible:outline-2">Open published form</a>}{status && <p role="status" className="text-sm">{status}</p>}</div>;
+  </fieldset></section>}{status && <p role="status" className="text-sm">{status}</p>}</div>;
 }
 
-export function RetentionSettings({ workspaceId }: { workspaceId: string }) {
+export function DataSettings({ workspaceId, busy, onExportBackup, onImportBackup }: {
+  workspaceId: string;
+  busy: boolean;
+  onExportBackup: () => void;
+  onImportBackup: (raw: string) => Promise<JsonImportResult>;
+}) {
   const [settings, setSettings] = useState<z.infer<typeof retentionSettingsSchema> | null>(null); const [status, setStatus] = useState(''); const [confirm, setConfirm] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const path = `workspaces/${workspaceId}/retention`;
   useEffect(() => { let live = true; apiRequest(path, retentionEnvelope).then((r) => { if (live) setSettings(r.data); }).catch((error: unknown) => { if (live) setStatus(error instanceof Error ? error.message : 'Unable to load retention.'); }); return () => { live = false; }; }, [path]);
   return <div className="paper-control max-w-3xl mx-auto p-5 sm:p-8 space-y-6"><h1 className="font-display text-3xl font-bold">Data settings</h1>{settings && <section className={panelClass}><h2 className="font-display text-lg font-bold">Response retention</h2><p className="text-sm text-[#6E655E]">Responses older than this window move to trash during scheduled maintenance. After the recovery window, their answers and contextual metadata are permanently erased. Your form history stays available. Deleted answers cannot be recovered after this window.</p><label className="text-sm block space-y-2 font-semibold">Keep active responses<select className={inputClass} value={settings.responseRetentionDays ?? 'forever'} onChange={(e) => { setConfirm(false); setSettings({ ...settings, responseRetentionDays: e.target.value === 'forever' ? null : Number(e.target.value) }); }}><option value="forever">Until I delete them</option>{[7, 30, 90, 180, 365].map((days) => <option key={days} value={days}>{days} {days === 1 ? 'day' : 'days'}</option>)}</select></label><label className="text-sm block space-y-2 font-semibold">Trash recovery window<select className={inputClass} value={settings.trashRetentionDays} onChange={(e) => { setConfirm(false); setSettings({ ...settings, trashRetentionDays: Number(e.target.value) }); }}>{[1, 7, 14, 30].map((days) => <option key={days} value={days}>{days} {days === 1 ? 'day' : 'days'}</option>)}</select></label>
       {confirm ? <div className="p-4 rounded-xl border border-[#D4573B] space-y-3"><p className="text-sm">This applies to existing responses too. Expired responses will be erased after their recovery window.</p><div className="flex gap-2"><PaperButton size="sm" variant="coral" onClick={async () => { try { await apiRequest(path, retentionEnvelope, { method: 'PUT', body: JSON.stringify(settings) }); setStatus('Retention policy saved.'); setConfirm(false); } catch (error) { setStatus(error instanceof Error ? error.message : 'Save failed.'); } }}>Confirm retention policy</PaperButton><PaperButton size="sm" variant="ghost" onClick={() => setConfirm(false)}>Cancel</PaperButton></div></div> : <PaperButton onClick={() => setConfirm(true)}>Save retention policy</PaperButton>}
-    </section>}<section className={panelClass}><h2 className="font-display text-lg font-bold">Backups and recovery</h2><p className="text-sm text-[#6E655E]">Download a copy of your forms and responses with Export Backup in Forms. Recover archived forms from Archive, or restore deleted responses from response trash while they are still recoverable.</p><p className="text-xs text-[#6E655E]">Deleted responses may remain in retained backups until those backups expire.</p></section>{status && <p role="status">{status}</p>}</div>;
+    </section>}
+    <section className={panelClass} aria-labelledby="workspace-backups-title">
+      <div>
+        <h2 id="workspace-backups-title" className="font-display text-lg font-bold">Workspace backups</h2>
+        <p className="mt-1 text-sm text-[#6E655E]">Download your active forms and response history, or import them from a Plyli backup.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <PaperButton size="sm" disabled={busy} onClick={onExportBackup}><Download size={14} />Export backup</PaperButton>
+        <PaperButton size="sm" variant="ghost" disabled={busy} onClick={() => setImportOpen(true)}><Upload size={14} />Import backup</PaperButton>
+      </div>
+      <p className="text-xs text-[#6E655E]">Backups can contain respondents’ answers. Keep downloaded files private.</p>
+    </section>
+    {importOpen && <JsonImportDialog kind="backup" onClose={() => setImportOpen(false)} onImport={onImportBackup} />}
+    {status && <p role="status">{status}</p>}
+  </div>;
 }

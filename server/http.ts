@@ -70,7 +70,9 @@ export async function handleApiRequest(request: Request, path: string[], deps: A
       if (path.length === 3 && method === 'GET') return reply((await service.getPublished(slug)).definition);
       if (path.length === 4 && path[3] === 'submissions' && method === 'POST') {
         const idempotencyKey = z.string().min(8).max(128).regex(/^[A-Za-z0-9_-]+$/).parse(request.headers.get('idempotency-key'));
-        const result = await service.submit(slug, await readJson(request, 128 * 1024), idempotencyKey);
+        const userId = request.headers.has('cookie') ? await deps.sessionUserId(request.headers) : null;
+        if (userId) requireSameOrigin(request, deps.origin);
+        const result = await service.submit(slug, await readJson(request, 128 * 1024), idempotencyKey, undefined, userId ? `account:${userId}` : undefined);
         return reply(result, result.replayed ? 200 : 201);
       }
       throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Unsupported public operation.');
@@ -134,7 +136,10 @@ export async function handleApiRequest(request: Request, path: string[], deps: A
     if (path.length === 5 && path[4] === 'validate' && method === 'POST') return reply(await service.validateAnswers(principal, workspaceId, formId, await readJson(request, 128 * 1024)));
     if (path.length === 5 && path[4] === 'submissions' && method === 'POST') {
       const key = z.string().min(8).max(128).regex(/^[A-Za-z0-9_-]+$/).parse(request.headers.get('idempotency-key'));
-      const result = await service.integrationSubmit(principal, workspaceId, formId, await readJson(request, 128 * 1024), key);
+      const respondent = request.headers.get('x-plyli-respondent');
+      if (respondent !== null && principal.kind !== 'key') throw new ApiError(403, 'FORBIDDEN', 'A scoped API key is required to identify an integration respondent.');
+      const respondentId = respondent === null ? undefined : `integration:${resourceId.parse(respondent)}`;
+      const result = await service.integrationSubmit(principal, workspaceId, formId, await readJson(request, 128 * 1024), key, respondentId);
       return reply(result, result.replayed ? 200 : 201);
     }
     if (path.length === 5 && path[4] === 'submissions' && method === 'DELETE') return reply(await management.trashResponses(principal, workspaceId, formId));

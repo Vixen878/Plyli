@@ -8,12 +8,25 @@ import { exportWorkspaceBackup } from '@/core/migrations';
 import { readJson } from '@/server/http';
 import { requireSameOrigin, generateApiKey, hashSecret } from '@/server/security';
 import { validateBackupIntegrity } from '@/server/forms';
+import { prepareFormDraft } from '@/lib/form-draft';
 
 test('runtime form contracts accept all existing templates and seed data', () => {
   const seed = createInitialSeedWorkspace();
   for (const form of [...seed.forms, createBlankForm()]) assert.equal(formDefinitionSchema.safeParse(form).success, true);
   const backup = importBackupSchema.parse(JSON.parse(exportWorkspaceBackup(seed.forms, seed.responses, seed.revisions, [])));
   validateBackupIntegrity(backup);
+});
+
+test('pasted definitions create independent drafts with their original branching and appearance', () => {
+  const source = createEventRsvpForm();
+  const first = prepareFormDraft({ ...source, revision: 7 });
+  const second = prepareFormDraft(source);
+  assert.notEqual(first.id, source.id);
+  assert.notEqual(second.id, first.id);
+  assert.equal(first.revision, 1);
+  assert.deepEqual(first.questions, source.questions);
+  assert.deepEqual(first.appearance, source.appearance);
+  assert.throws(() => prepareFormDraft({ ...source, questionOrder: [] }), /questionOrder/);
 });
 
 test('Plyli exports use the current brand and older backups remain importable', () => {

@@ -16,12 +16,12 @@ import {
   exportSubmissionsToJson,
   deriveFlowGraph,
 } from '@/lib/form-engine';
+import { campaignFields } from '@/lib/campaign-fields';
 import { PaperButton, SketchEmptyFolderGraphic } from './paper-primitives';
 import {
   Play,
   Trash2,
   Download,
-  HardDrive,
   BarChart3,
   ListChecks,
   Clock,
@@ -46,6 +46,7 @@ import {
   FileJson,
   Eye,
   Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 
 export type AnalyticsSectionTab =
@@ -62,6 +63,48 @@ type AcquisitionDimensionTab =
   | 'byTerm'
   | 'byReferrer';
 
+const questionSections = [
+  ['metrics', 'Question metrics', BarChart3],
+  ['reach', 'Question reach', ListChecks],
+  ['branches', 'Branch paths', GitBranch],
+] as const;
+
+const acquisitionSections = [
+  ['traffic', 'Traffic sources', Compass],
+  ['links', 'Campaign links', Link2],
+  ['questions', 'Question completion', BarChart3],
+] as const;
+
+function ResponseSectionLayout<View extends string>({ label, sections, current, onChange, children }: {
+  label: string;
+  sections: readonly (readonly [View, string, LucideIcon])[];
+  current: View;
+  onChange: (view: View) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid items-start gap-5 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
+      <nav aria-label={label} className="flex flex-wrap gap-1 rounded-xl border border-[#2A2623]/25 bg-[#FFFDF9] p-1.5 lg:grid">
+        {sections.map(([id, title, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            aria-current={current === id ? 'true' : undefined}
+            onClick={() => onChange(id)}
+            className={`flex min-h-10 items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm font-semibold leading-tight focus-visible:outline-2 ${
+              current === id ? 'border-[#2A2623]/60 bg-[#F6D97A]/50' : 'border-transparent hover:bg-[#FAF6F0]'
+            }`}
+          >
+            <Icon size={16} aria-hidden="true" className="shrink-0" />
+            {title}
+          </button>
+        ))}
+      </nav>
+      <div className="min-w-0 space-y-5">{children}</div>
+    </div>
+  );
+}
+
 interface ResponsesViewProps {
   persistenceMode?: 'local' | 'account';
   publicFormUrl?: string;
@@ -75,6 +118,7 @@ interface ResponsesViewProps {
   onClearFormAnalytics?: (formId: string) => void;
   onExportFormResponses: (formId: string) => void;
   onNavigateToFlowCanvas?: () => void;
+  responseTrash?: { onOpen: () => void; content: React.ReactNode; busy: boolean };
 }
 
 export function ResponsesView({
@@ -90,12 +134,14 @@ export function ResponsesView({
   onClearFormAnalytics,
   onExportFormResponses,
   onNavigateToFlowCanvas,
+  responseTrash,
 }: ResponsesViewProps) {
-  const [activeTab, setActiveTab] = useState<AnalyticsSectionTab>('overview');
+  const [activeTab, setActiveTab] = useState<AnalyticsSectionTab>('submissions');
+  const [questionView, setQuestionView] = useState<(typeof questionSections)[number][0]>('metrics');
   const [dateRangePreset, setDateRangePreset] =
     useState<AnalyticsDateRangePreset>('all');
 
-  // Acquisition filters
+  const [acquisitionView, setAcquisitionView] = useState<(typeof acquisitionSections)[number][0]>('traffic');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [mediumFilter, setMediumFilter] = useState<string>('all');
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
@@ -109,16 +155,19 @@ export function ResponsesView({
       ? customBaseUrl
       : publicFormUrl ?? '';
 
-  const [utmSourceInput, setUtmSourceInput] = useState<string>('newsletter');
-  const [utmMediumInput, setUtmMediumInput] = useState<string>('email');
+  const [utmSourceInput, setUtmSourceInput] = useState<string>('');
+  const [utmMediumInput, setUtmMediumInput] = useState<string>('');
   const [utmCampaignInput, setUtmCampaignInput] =
-    useState<string>('spring_launch');
+    useState<string>('');
   const [utmContentInput, setUtmContentInput] = useState<string>('');
   const [utmTermInput, setUtmTermInput] = useState<string>('');
   const [copiedCampaignUrl, setCopiedCampaignUrl] = useState<boolean>(false);
 
   // Submissions tab filters & selection
   const [submissionSearch, setSubmissionSearch] = useState<string>('');
+  const [oldestFirst, setOldestFirst] = useState(false);
+  const [submissionLimit, setSubmissionLimit] = useState(40);
+  const [deletePending, setDeletePending] = useState<string | null>(null);
   const [submissionRevisionFilter, setSubmissionRevisionFilter] =
     useState<string>('all');
   const [submissionSourceFilter, setSubmissionSourceFilter] =
@@ -132,13 +181,14 @@ export function ResponsesView({
 
   // Compute full analytics report for the current filter selection
   const report = useMemo(() => {
-    return computeFormAnalyticsReport(form, responses, analyticsEvents, {
+    return computeFormAnalyticsReport(form, activeTab === 'submissions' ? [] : responses, activeTab === 'submissions' ? [] : analyticsEvents, {
       dateRange: dateRangePreset,
       utmSource: sourceFilter === 'all' ? undefined : sourceFilter,
       utmMedium: mediumFilter === 'all' ? undefined : mediumFilter,
       utmCampaign: campaignFilter === 'all' ? undefined : campaignFilter,
     });
   }, [
+    activeTab,
     form,
     responses,
     analyticsEvents,
@@ -149,13 +199,13 @@ export function ResponsesView({
   ]);
 
   const flowGraph = useMemo(() => deriveFlowGraph(form), [form]);
-  const hasSessionData = analyticsEvents.some((event) => event.formId === form.id);
+  const hasSessionData = report.overview.hasTrackedBehavioralEvents;
 
   // Campaign URL builder result
   const campaignBuildResult = useMemo(() => {
     return buildCampaignUrl({
       baseUrl: effectiveBaseUrl,
-      formId: form.id,
+      formId: persistenceMode === 'local' ? form.id : undefined,
       utm_source: utmSourceInput,
       utm_medium: utmMediumInput,
       utm_campaign: utmCampaignInput,
@@ -165,6 +215,7 @@ export function ResponsesView({
   }, [
     effectiveBaseUrl,
     form.id,
+    persistenceMode,
     utmSourceInput,
     utmMediumInput,
     utmCampaignInput,
@@ -183,7 +234,8 @@ export function ResponsesView({
   }, [responses, form.id]);
 
   const filteredSubmissions = useMemo(() => {
-    return allFormResponses.filter((resp) => {
+    const ordered = oldestFirst ? [...allFormResponses].reverse() : allFormResponses;
+    return ordered.filter((resp) => {
       if (
         submissionRevisionFilter !== 'all' &&
         String(resp.formRevision || 1) !== submissionRevisionFilter
@@ -226,6 +278,7 @@ export function ResponsesView({
     });
   }, [
     allFormResponses,
+    oldestFirst,
     submissionRevisionFilter,
     submissionSourceFilter,
     submissionViewportFilter,
@@ -344,175 +397,66 @@ export function ResponsesView({
   const { overview, questions: questionMetrics, funnel, acquisition } = report;
 
   const activeDimensionRows = acquisition[dimensionTab];
+  const campaignInputs = {
+    utm_source: [utmSourceInput, setUtmSourceInput],
+    utm_medium: [utmMediumInput, setUtmMediumInput],
+    utm_campaign: [utmCampaignInput, setUtmCampaignInput],
+    utm_content: [utmContentInput, setUtmContentInput],
+    utm_term: [utmTermInput, setUtmTermInput],
+  } as const;
   const campaignErrors = Object.values(campaignBuildResult.errors).filter(
     Boolean
   );
+  const hasResponseData = allFormResponses.length > 0 || analyticsEvents.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      <div className="bg-[#FFF9EB] border-2 border-[#2A2623] rounded-2xl p-4 sm:p-5 shadow-[3px_3px_0px_#2A2623] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-[#F6D97A] border-2 border-[#2A2623] flex items-center justify-center shrink-0">
-            <HardDrive className="w-5 h-5 text-[#2A2623]" />
-          </div>
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-base sm:text-lg font-bold text-[#2A2623]">
-                {'Response insights'} ({allFormResponses.length}{' '}
-                {allFormResponses.length === 1 ? 'submission' : 'submissions'})
-              </h2>
-              <span className="px-2 py-0.5 rounded-md bg-[#FFFDF9] border border-[#2A2623] font-mono text-[11px] font-bold text-[#2A2623] tabular-nums">
-                {persistenceMode === 'account' ? 'Published responses' : 'Preview responses'}
-              </span>
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[#2A2623]/15 pb-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Responses</h2>
+          <p className="mt-1 text-xs text-[#6E655E]">{persistenceMode === 'account' ? 'Review published submissions and form performance.' : 'Review preview responses saved on this device.'}</p>
+        </div>
+        {activeTab === 'submissions' && (responseTrash || hasResponseData) && (
+          <details className="max-w-xs">
+            <summary className="cursor-pointer text-sm font-semibold underline underline-offset-4">Manage data</summary>
+            <div className="mt-2 space-y-2 rounded-lg border border-[#2A2623]/25 bg-[#FFFDF9] p-3">
+              {hasResponseData && <PaperButton variant="ghost" size="sm" onClick={() => onExportFormResponses(form.id)}><Download size={14} />Export all JSON</PaperButton>}
+              {responseTrash && <PaperButton variant="ghost" size="sm" disabled={responseTrash.busy} aria-expanded={Boolean(responseTrash.content)} aria-controls={responseTrash.content ? 'response-trash' : undefined} onClick={responseTrash.onOpen}><Trash2 size={14} />Response trash</PaperButton>}
+              {hasResponseData && (confirmClearAll ? <>
+                <p className="text-xs">{persistenceMode === 'account' ? 'Move all responses to recoverable trash?' : 'Clear all responses and analytics from this device?'}</p>
+                <PaperButton variant="coral" size="sm" onClick={() => { onClearFormResponses(form.id); onClearFormAnalytics?.(form.id); setConfirmClearAll(false); }}>Confirm</PaperButton>
+                <PaperButton variant="ghost" size="sm" onClick={() => setConfirmClearAll(false)}>Cancel</PaperButton>
+              </> : <PaperButton variant="ghost" size="sm" onClick={() => setConfirmClearAll(true)}><Trash2 size={14} />{persistenceMode === 'account' ? 'Trash all responses' : 'Clear data'}</PaperButton>)}
             </div>
-            <p className="text-xs sm:text-sm text-[#6E655E] leading-relaxed max-w-3xl">
-              {persistenceMode === 'account' ? 'Review your responses, explore answer trends, and export your results.' : 'Review preview responses saved on this device. They are separate from your published results.'}
-            </p>
-          </div>
+          </details>
+        )}
+      </header>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#2A2623]/15 pb-3">
+        <div role="tablist" aria-label="Response views" className="flex flex-wrap items-center gap-1">
+          {([
+            ['submissions', 'Submissions', ListChecks],
+            ['overview', 'Overview', TrendingUp],
+            ['questions', 'Questions & Flow', BarChart3],
+            ['acquisition', 'Acquisition', Compass],
+          ] as const).map(([tab, label, Icon], index, tabs) => (
+            <button type="button" role="tab" key={tab} id={'response-tab-' + tab}
+              aria-selected={activeTab === tab} aria-controls={'response-panel-' + tab}
+              tabIndex={activeTab === tab ? 0 : -1} data-testid={'analytics-tab-' + tab}
+              onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => {
+                const offsets: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: tabs.length - index - 1 };
+                if (!(event.key in offsets)) return;
+                event.preventDefault();
+                const next = tabs[(index + offsets[event.key] + tabs.length) % tabs.length][0];
+                setActiveTab(next);
+                document.getElementById('response-tab-' + next)?.focus();
+              }}
+              className={'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold focus-visible:outline-2 ' + (activeTab === tab ? 'border-[#2A2623] bg-[#F6D97A]/50' : 'border-transparent text-[#6E655E] hover:bg-[#FFFDF9]')}>
+              <Icon size={14} />{label}
+            </button>
+          ))}
         </div>
-
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <PaperButton
-            variant="coral"
-            size="sm"
-            onClick={() => onLaunchPreview()}
-            data-testid="analytics-launch-preview-btn"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Preview form</span>
-          </PaperButton>
-
-          {allFormResponses.length > 0 && (
-            <>
-              <PaperButton
-                variant="ivory"
-                size="sm"
-                onClick={handleDownloadCsv}
-                data-testid="export-submissions-csv"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </PaperButton>
-
-              <PaperButton
-                variant="ivory"
-                size="sm"
-                onClick={() => onExportFormResponses(form.id)}
-                data-testid="export-submissions-json-top"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export JSON</span>
-              </PaperButton>
-            </>
-          )}
-
-          {(allFormResponses.length > 0 || analyticsEvents.length > 0) &&
-            (confirmClearAll ? (
-              <div className="inline-flex items-center gap-1.5">
-                <PaperButton
-                  variant="coral"
-                  size="sm"
-                  onClick={() => {
-                    onClearFormResponses(form.id);
-                    onClearFormAnalytics?.(form.id);
-                    setConfirmClearAll(false);
-                  }}
-                >
-                  <span>Confirm Clear</span>
-                </PaperButton>
-                <PaperButton
-                  variant="ivory"
-                  size="sm"
-                  onClick={() => setConfirmClearAll(false)}
-                >
-                  <span>Cancel</span>
-                </PaperButton>
-              </div>
-            ) : (
-              <PaperButton
-                variant="ivory"
-                size="sm"
-                onClick={() => setConfirmClearAll(true)}
-              >
-                <Trash2 className="w-3.5 h-3.5 text-[#D4573B]" />
-                <span>Clear Data</span>
-              </PaperButton>
-            ))}
-        </div>
-      </div>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-3.5 shadow-[3px_3px_0px_#2A2623]">
-        <div
-          className="flex flex-wrap items-center gap-1 p-1 bg-[#EFE9DE] border-2 border-[#2A2623] rounded-xl"
-          role="tablist"
-          aria-label="Analytics workspace sections"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'overview'}
-            data-testid="analytics-tab-overview"
-            onClick={() => setActiveTab('overview')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
-              activeTab === 'overview'
-                ? 'bg-[#FFFDF9] text-[#2A2623] border border-[#2A2623] shadow-[1px_1px_0px_#2A2623]'
-                : 'text-[#6E655E] hover:text-[#2A2623]'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Overview</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'questions'}
-            data-testid="analytics-tab-questions"
-            onClick={() => setActiveTab('questions')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
-              activeTab === 'questions'
-                ? 'bg-[#FFFDF9] text-[#2A2623] border border-[#2A2623] shadow-[1px_1px_0px_#2A2623]'
-                : 'text-[#6E655E] hover:text-[#2A2623]'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>Questions & Flow</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'acquisition'}
-            data-testid="analytics-tab-acquisition"
-            onClick={() => setActiveTab('acquisition')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
-              activeTab === 'acquisition'
-                ? 'bg-[#FFFDF9] text-[#2A2623] border border-[#2A2623] shadow-[1px_1px_0px_#2A2623]'
-                : 'text-[#6E655E] hover:text-[#2A2623]'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            <span>Acquisition & UTM</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'submissions'}
-            data-testid="analytics-tab-submissions"
-            onClick={() => setActiveTab('submissions')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
-              activeTab === 'submissions'
-                ? 'bg-[#FFFDF9] text-[#2A2623] border border-[#2A2623] shadow-[1px_1px_0px_#2A2623]'
-                : 'text-[#6E655E] hover:text-[#2A2623]'
-            }`}
-          >
-            <ListChecks className="w-3.5 h-3.5" />
-            <span className="tabular-nums">
-              Submissions ({allFormResponses.length})
-            </span>
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {activeTab !== 'submissions' && <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6E655E]">
             <Filter className="w-3.5 h-3.5 text-[#2A2623]" />
             <label htmlFor="analytics-date-range">Period:</label>
@@ -548,15 +492,16 @@ export function ResponsesView({
               <span>Reset UTM Filters</span>
             </button>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* =====================================================================
           TAB 1: OVERVIEW
          ===================================================================== */}
       {activeTab === 'overview' && (
-        <div className="space-y-6" data-testid="analytics-section-overview">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        <div className="space-y-6" role="tabpanel" id="response-panel-overview" aria-labelledby="response-tab-overview" data-testid="analytics-section-overview">
+          {!hasSessionData && <p className="rounded-xl bg-[#FDF7E2] px-4 py-3 text-sm">No behavioral history is available for this form. Submission totals and recorded response durations are still available.</p>}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-4 shadow-[2px_2px_0px_#2A2623] space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#6E655E] block">
                 Form Views
@@ -598,7 +543,6 @@ export function ResponsesView({
                 {overview.totalSubmissions}
               </span>
               <span className="text-[11px] text-[#6E655E] tabular-nums block">
-                {overview.completedTrackedSessions} tracked ·{' '}
                 {overview.historicalPreAnalyticsSubmissions} without session history
               </span>
             </div>
@@ -675,7 +619,7 @@ export function ResponsesView({
                 </div>
               </div>
 
-              {overview.dailyTrends.length === 0 ? (
+              {overview.dailyTrends.length < 2 ? (
                 <div className="py-10 text-center space-y-2">
                   <p className="text-sm font-bold text-[#2A2623]">
                     No activity recorded in this period
@@ -837,17 +781,14 @@ export function ResponsesView({
           TAB 2: QUESTIONS & FLOW
          ===================================================================== */}
       {activeTab === 'questions' && (
-        <div className="space-y-6" data-testid="analytics-section-questions">
-          <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 shadow-[3px_3px_0px_#2A2623] space-y-4">
+        <div role="tabpanel" id="response-panel-questions" aria-labelledby="response-tab-questions" data-testid="analytics-section-questions">
+          <ResponseSectionLayout label="Questions & Flow views" sections={questionSections} current={questionView} onChange={setQuestionView}>
+          {questionView === 'reach' && <section className="space-y-4 rounded-2xl border-2 border-[#2A2623] bg-[#FFFDF9] p-5 shadow-[3px_3px_0px_#2A2623]">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2A2623]/15 pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-[#2A2623]">
-                  Question Progression Funnel
+                  Question reach
                 </h3>
-                <p className="text-xs text-[#6E655E]">
-                  Respondent reach, step-to-step conversion, and observed
-                  drop-offs across the form journey
-                </p>
               </div>
               {onNavigateToFlowCanvas && (
                 <PaperButton
@@ -862,6 +803,7 @@ export function ResponsesView({
             </div>
 
             <div className="space-y-3">
+              <p className="text-sm text-[#6E655E]">Reach combines recorded activity with paths reconstructed from submitted answers. Only tracked sessions contribute to exits and validation errors.</p>
               {funnel.map((step) => (
                 <div
                   key={step.stepId}
@@ -872,32 +814,15 @@ export function ResponsesView({
                       <span className="px-2 py-0.5 rounded bg-[#FFFDF9] border border-[#2A2623] font-mono font-bold text-[#2A2623] uppercase text-[10px]">
                         {step.kind}
                       </span>
-                      <span className="font-bold text-[#2A2623] truncate">
-                        {step.label}
+                      <span className="min-w-0 font-bold text-[#2A2623] [overflow-wrap:anywhere]">
+                        {step.kind === 'view' ? 'Paths entering the form' : step.kind === 'complete' ? 'Completed paths' : step.label}
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-[#6E655E] tabular-nums">
-                      <span>
-                        Sessions:{' '}
-                        <strong className="text-[#2A2623]">
-                          {step.sessionCount}
-                        </strong>
-                      </span>
-                      <span>
-                        Step Conv:{' '}
-                        <strong className="text-[#2A2623]">
-                          {formatRate(step.conversionFromPrevious)}
-                        </strong>
-                      </span>
-                      <span>
-                        From Entry:{' '}
-                        <strong className="text-[#2A2623]">
-                          {formatRate(step.conversionFromInitial)}
-                        </strong>
-                      </span>
-                      {step.dropOffCount > 0 && (
+                      <span>Path count <strong className="text-[#2A2623]">{step.sessionCount}</strong></span>
+                      {step.kind === 'question' && step.dropOffCount > 0 && (
                         <span>
-                          Drop-offs:{' '}
+                          Tracked exits:{' '}
                           <strong className="text-[#D4573B]">
                             {step.dropOffCount}
                           </strong>
@@ -906,27 +831,18 @@ export function ResponsesView({
                     </div>
                   </div>
 
-                  <div className="h-2.5 bg-[#FFFDF9] border border-[#2A2623] rounded-full overflow-hidden flex">
-                    <div
-                      className="h-full bg-[#C5DFC9] transition-all"
-                      style={{
-                        width: `${step.conversionFromInitial ?? (step.sessionCount > 0 ? 100 : 0)}%`,
-                      }}
-                    />
-                  </div>
                 </div>
               ))}
             </div>
-          </div>
-          <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 shadow-[3px_3px_0px_#2A2623] space-y-4">
+          </section>}
+          {questionView === 'branches' && <section className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 shadow-[3px_3px_0px_#2A2623] space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2A2623]/15 pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-[#2A2623]">
-                  Conditional Branch & Path Usage
+                  Branch paths
                 </h3>
                 <p className="text-xs text-[#6E655E]">
-                  Aggregated edge traversals across rule-based jumps and default
-                  paths
+                  Recorded transitions and paths reconstructed from submissions
                 </p>
               </div>
               <span className="text-xs font-mono text-[#6E655E] tabular-nums">
@@ -934,7 +850,7 @@ export function ResponsesView({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {flowGraph.edges.map((edge) => {
                 const stat = report.flowOverlay.edgeTraversals[edge.id];
                 const count = stat?.count ?? 0;
@@ -982,8 +898,8 @@ export function ResponsesView({
                 );
               })}
             </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          </section>}
+          {questionView === 'metrics' && <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {questionMetrics.map((stat) => {
               const meta = QUESTION_TYPE_META[stat.questionType];
               const choiceRows =
@@ -1042,7 +958,7 @@ export function ResponsesView({
                         </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center bg-[#FAF6F0] border border-[#2A2623]/25 rounded-xl p-2.5 tabular-nums">
+                    <div className="grid grid-cols-3 xl:grid-cols-6 gap-2 text-center bg-[#FAF6F0] border border-[#2A2623]/25 rounded-xl p-2.5 tabular-nums">
                       <div>
                         <span className="block text-[10px] text-[#6E655E]">
                           Reached
@@ -1060,8 +976,8 @@ export function ResponsesView({
                         </span>
                       </div>
                       <div>
-                        <span className="block text-[10px] text-[#6E655E]">
-                          Skipped
+                        <span title="Includes questions skipped by branching and questions reached without an answer" className="block text-[10px] text-[#6E655E]">
+                          Unanswered
                         </span>
                         <span className="font-mono text-xs font-bold text-[#2A2623]">
                           {stat.skippedCount}
@@ -1069,7 +985,7 @@ export function ResponsesView({
                       </div>
                       <div>
                         <span className="block text-[10px] text-[#6E655E]">
-                          Exits
+                          Tracked exits
                         </span>
                         <span className="font-mono text-xs font-bold text-[#D4573B]">
                           {stat.exitCount}
@@ -1085,7 +1001,7 @@ export function ResponsesView({
                       </div>
                       <div>
                         <span className="block text-[10px] text-[#6E655E]">
-                          Val. Errors
+                          Validation errors
                         </span>
                         <span className="font-mono text-xs font-bold text-[#2A2623]">
                           {stat.validationErrorCount}
@@ -1256,7 +1172,8 @@ export function ResponsesView({
                 </div>
               );
             })}
-          </div>
+          </div>}
+          </ResponseSectionLayout>
         </div>
       )}
 
@@ -1264,24 +1181,24 @@ export function ResponsesView({
           TAB 3: ACQUISITION & CAMPAIGN LINK BUILDER
          ===================================================================== */}
       {activeTab === 'acquisition' && (
-        <div className="space-y-6" data-testid="analytics-section-acquisition">
-          {(persistenceMode === 'local' || publicFormUrl) && <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 sm:p-6 shadow-[4px_4px_0px_#2A2623] space-y-5">
+        <div role="tabpanel" id="response-panel-acquisition" aria-labelledby="response-tab-acquisition" data-testid="analytics-section-acquisition">
+          <ResponseSectionLayout label="Acquisition views" sections={acquisitionSections} current={acquisitionView} onChange={setAcquisitionView}>
+          {acquisitionView === 'links' && ((persistenceMode === 'local' || publicFormUrl) ? <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 sm:p-6 shadow-[4px_4px_0px_#2A2623] space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2A2623]/15 pb-4">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link2 className="w-4 h-4 text-[#E86D52]" />
                   <h3 className="font-display text-lg font-bold text-[#2A2623]">
-                    Campaign Link Builder (UTM Generator)
+                    Create a campaign link
                   </h3>
-                  {campaignBuildResult.isLocalTestUrl && (
+                  {persistenceMode === 'local' && campaignBuildResult.isLocalTestUrl && (
                     <span className="px-2 py-0.5 rounded-md bg-[#F6D97A] border border-[#2A2623] font-mono text-[10px] font-bold text-[#2A2623]">
                       Preview link
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-[#6E655E]">
-                  Add campaign parameters to your published link to identify
-                  the sources of submitted responses.
+                  Use a different link for each place you share this form. For example, set Source to “newsletter”, Medium to “email”, and Campaign to “open_house” to group those responses in Traffic sources.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1346,110 +1263,18 @@ export function ResponsesView({
                 </span>
               </div>
 
-              <div className="space-y-1">
-                <label
-                  htmlFor="utm-source-input"
-                  className="block text-xs font-bold text-[#2A2623]"
-                >
-                  Source (<code className="font-mono">utm_source</code>)
-                </label>
-                <input
-                  id="utm-source-input"
-                  data-testid="campaign-input-source"
-                  type="text"
-                  placeholder="e.g. newsletter, linkedin, google"
-                  value={utmSourceInput}
-                  onChange={(e) => setUtmSourceInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#FAF6F0] border-2 border-[#2A2623] text-xs text-[#2A2623]"
-                />
-                <span className="block text-[11px] text-[#6E655E]">
-                  Identifies which platform or referrer sent the traffic
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="utm-medium-input"
-                  className="block text-xs font-bold text-[#2A2623]"
-                >
-                  Medium (<code className="font-mono">utm_medium</code>)
-                </label>
-                <input
-                  id="utm-medium-input"
-                  data-testid="campaign-input-medium"
-                  type="text"
-                  placeholder="e.g. email, social, cpc, qr"
-                  value={utmMediumInput}
-                  onChange={(e) => setUtmMediumInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#FAF6F0] border-2 border-[#2A2623] text-xs text-[#2A2623]"
-                />
-                <span className="block text-[11px] text-[#6E655E]">
-                  Marketing channel or delivery mechanism
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="utm-campaign-input"
-                  className="block text-xs font-bold text-[#2A2623]"
-                >
-                  Campaign (<code className="font-mono">utm_campaign</code>)
-                </label>
-                <input
-                  id="utm-campaign-input"
-                  data-testid="campaign-input-campaign"
-                  type="text"
-                  placeholder="e.g. spring_launch, beta_invite"
-                  value={utmCampaignInput}
-                  onChange={(e) => setUtmCampaignInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#FAF6F0] border-2 border-[#2A2623] text-xs text-[#2A2623]"
-                />
-                <span className="block text-[11px] text-[#6E655E]">
-                  Specific promotion, launch, or initiative name
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="utm-content-input"
-                  className="block text-xs font-bold text-[#2A2623]"
-                >
-                  Content (<code className="font-mono">utm_content</code>)
-                </label>
-                <input
-                  id="utm-content-input"
-                  data-testid="campaign-input-content"
-                  type="text"
-                  placeholder="e.g. hero_button, footer_link"
-                  value={utmContentInput}
-                  onChange={(e) => setUtmContentInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#FAF6F0] border-2 border-[#2A2623] text-xs text-[#2A2623]"
-                />
-                <span className="block text-[11px] text-[#6E655E]">
-                  Optional: differentiates placements or creative variants
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="utm-term-input"
-                  className="block text-xs font-bold text-[#2A2623]"
-                >
-                  Term (<code className="font-mono">utm_term</code>)
-                </label>
-                <input
-                  id="utm-term-input"
-                  data-testid="campaign-input-term"
-                  type="text"
-                  placeholder="e.g. design_ops, form_builder"
-                  value={utmTermInput}
-                  onChange={(e) => setUtmTermInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#FAF6F0] border-2 border-[#2A2623] text-xs text-[#2A2623]"
-                />
-                <span className="block text-[11px] text-[#6E655E]">
-                  Optional: search keyword or target audience segment
-                </span>
-              </div>
+              {campaignFields.map(({ key, label, example, help }) => {
+                const input = campaignInputs[key];
+                const name = key.slice(4);
+                const id = "utm-" + name + "-input";
+                return <div key={key} className="min-w-0 space-y-1">
+                  <label htmlFor={id} className="block text-xs font-bold">{label}</label>
+                  <input id={id} aria-describedby={id + "-help"} data-testid={"campaign-input-" + name} type="text"
+                    maxLength={120} placeholder={example} value={input[0]} onChange={(event) => input[1](event.target.value)}
+                    className="w-full rounded-xl border-2 border-[#2A2623] bg-[#FAF6F0] px-3 py-2 text-xs" />
+                  <p id={id + "-help"} className="text-xs leading-relaxed text-[#6E655E]">{help}</p>
+                </div>;
+              })}
             </div>
             <div className="p-4 rounded-2xl bg-[#FAF6F0] border-2 border-[#2A2623] space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1530,10 +1355,12 @@ export function ResponsesView({
                 </PaperButton>
               </div>
             </div>
-          </div>
-
-          }
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+          </div> : <div className="rounded-2xl border border-[#2A2623]/35 bg-[#FFFDF9] p-5">
+            <h3 className="font-display text-lg font-bold">Create a campaign link</h3>
+            <p className="mt-1 text-sm text-[#6E655E]">Publish a form with public access to create campaign links.</p>
+          </div>)}
+          {acquisitionView === 'traffic' && <>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
             <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-4 shadow-[2px_2px_0px_#2A2623]">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#6E655E] block">
                 Attributed Views
@@ -1596,12 +1423,12 @@ export function ResponsesView({
               <div className="flex flex-wrap items-center gap-1 p-1 bg-[#EFE9DE] border border-[#2A2623] rounded-xl">
                 {(
                   [
-                    { id: 'bySource', label: 'UTM Source' },
-                    { id: 'byMedium', label: 'UTM Medium' },
-                    { id: 'byCampaign', label: 'UTM Campaign' },
-                    { id: 'byContent', label: 'UTM Content' },
-                    { id: 'byTerm', label: 'UTM Term' },
-                    { id: 'byReferrer', label: 'Referring Website' },
+                    { id: 'bySource', label: 'Source' },
+                    { id: 'byMedium', label: 'Medium' },
+                    { id: 'byCampaign', label: 'Campaign' },
+                    { id: 'byContent', label: 'Content' },
+                    { id: 'byTerm', label: 'Term' },
+                    { id: 'byReferrer', label: 'Referring website' },
                   ] as const
                 ).map((tab) => (
                   <button
@@ -1724,11 +1551,12 @@ export function ResponsesView({
               </div>
             )}
           </div>
-          {acquisition.sourceQuestionComparison.length > 0 && (
+          </>}
+          {acquisitionView === 'questions' && (acquisition.sourceQuestionComparison.length > 0 ? (
             <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-5 shadow-[3px_3px_0px_#2A2623] space-y-4">
               <div className="border-b border-[#2A2623]/15 pb-3">
                 <h3 className="font-display text-base font-bold text-[#2A2623]">
-                  Question Completion Behavior by Acquisition Source
+                  Question completion by source
                 </h3>
                 <p className="text-xs text-[#6E655E]">
                   Compare how visitors from different UTM sources progress
@@ -1773,7 +1601,11 @@ export function ResponsesView({
                 </table>
               </div>
             </div>
-          )}
+          ) : <div className="rounded-2xl border border-[#2A2623]/35 bg-[#FFFDF9] p-5">
+            <h3 className="font-display text-lg font-bold">Question completion by source</h3>
+            <p className="mt-1 text-sm text-[#6E655E]">This comparison appears once Plyli records question activity from a campaign source.</p>
+          </div>)}
+          </ResponseSectionLayout>
         </div>
       )}
 
@@ -1781,13 +1613,15 @@ export function ResponsesView({
           TAB 4: SUBMISSIONS
          ===================================================================== */}
       {activeTab === 'submissions' && (
-        <div className="space-y-6" data-testid="analytics-section-submissions">
+        <div className="space-y-6" role="tabpanel" id="response-panel-submissions" aria-labelledby="response-tab-submissions" data-testid="analytics-section-submissions">
+          {responseTrash?.content}
           <div className="bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-4 shadow-[3px_3px_0px_#2A2623] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5 flex-1">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="w-3.5 h-3.5 text-[#6E655E] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  aria-label="Search submissions"
                   data-testid="submissions-search-input"
                   placeholder="Search answers, UTM source, campaign, or ID..."
                   value={submissionSearch}
@@ -1824,6 +1658,9 @@ export function ResponsesView({
                 ))}
               </select>
 
+              <select aria-label="Sort submissions" className="rounded-xl border border-[#2A2623] bg-[#FAF6F0] px-2.5 py-1.5 text-xs" value={oldestFirst ? 'oldest' : 'newest'} onChange={(event) => setOldestFirst(event.target.value === 'oldest')}>
+                <option value="newest">Newest first</option><option value="oldest">Oldest first</option>
+              </select>
               <select
                 aria-label="Filter submissions by viewport category"
                 value={submissionViewportFilter}
@@ -1894,7 +1731,7 @@ export function ResponsesView({
                   Submissions ({filteredSubmissions.length})
                 </h3>
                 <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
-                  {filteredSubmissions.map((resp, idx) => {
+                  {filteredSubmissions.slice(0, submissionLimit).map((resp, idx) => {
                     const isSelected = selectedResponse?.id === resp.id;
                     const firstAnswer =
                       normalizeAnswerString(
@@ -1941,6 +1778,7 @@ export function ResponsesView({
                     );
                   })}
                 </div>
+                {filteredSubmissions.length > submissionLimit && <PaperButton size="sm" variant="ghost" onClick={() => setSubmissionLimit((limit) => limit + 40)}>Show more submissions</PaperButton>}
               </div>
               <div className="lg:col-span-7 bg-[#FFFDF9] border-2 border-[#2A2623] rounded-2xl p-6 shadow-[4px_4px_0px_#2A2623] space-y-5">
                 {selectedResponse && (
@@ -1985,18 +1823,19 @@ export function ResponsesView({
                       <PaperButton
                         variant="ivory"
                         size="sm"
-                        onClick={() => onDeleteResponse(selectedResponse.id)}
+                        onClick={() => setDeletePending(selectedResponse.id)}
                         aria-label="Delete this response"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-[#D4573B]" />
                         <span>{persistenceMode === 'account' ? 'Move to trash' : 'Delete Entry'}</span>
                       </PaperButton>
                     </div>
-                    <div
+                    {deletePending === selectedResponse.id && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg bg-[#FDECE8] p-2 text-sm"><span>{persistenceMode === 'account' ? 'Move this response to trash?' : 'Delete this preview response?'}</span><PaperButton size="sm" variant="coral" onClick={() => { onDeleteResponse(selectedResponse.id); setDeletePending(null); }}>Confirm</PaperButton><PaperButton size="sm" variant="ghost" onClick={() => setDeletePending(null)}>Cancel</PaperButton></div>}
+                    <details
                       data-testid="submission-attribution-panel"
                       className="p-3.5 rounded-xl bg-[#FFF9EB] border border-[#2A2623] space-y-2"
                     >
-                      <div className="flex items-center justify-between text-xs font-bold text-[#2A2623]">
+                      <summary className="cursor-pointer text-xs font-bold text-[#2A2623]">
                         <span className="inline-flex items-center gap-1.5">
                           <Globe className="w-3.5 h-3.5 text-[#E86D52]" />
                           Campaign details
@@ -2008,7 +1847,7 @@ export function ResponsesView({
                               ? 'Preview session'
                               : selectedResponse.sessionSource === 'public_live' ? 'Published response' : 'Session details unavailable'}
                         </span>
-                      </div>
+                      </summary>
 
                       {!selectedResponse.attribution ? (
                         <p className="text-xs text-[#6E655E]">
@@ -2072,7 +1911,7 @@ export function ResponsesView({
                           </div>
                         </div>
                       )}
-                    </div>
+                    </details>
                     <div className="space-y-3">
                       {resolvedHistoricalItems.map((item, qIdx) => {
                         const meta = QUESTION_TYPE_META[item.questionType];

@@ -1,6 +1,6 @@
 {
   "name": "plyli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "pnpm sdk:package && pnpm api:spec && next dev",
@@ -41,14 +41,18 @@
     "motion": "^12.23.24",
     "next": "15.5.29",
     "postcss": "8.5.32",
+    "qrcode": "1.5.4",
     "react": "19.3.1",
+    "react-day-picker": "9.14.0",
     "react-dom": "19.3.1",
     "server-only": "0.0.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "3.3.7",
     "@tailwindcss/postcss": "4.1.11",
     "@types/node": "^20",
+    "@types/qrcode": "1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "9.39.1",
@@ -56,8 +60,7 @@
     "prisma": "6.19.3",
     "tailwindcss": "4.1.11",
     "tsx": "4.23.15",
-    "typescript": "5.9.3",
-    "@eslint/eslintrc": "3.3.7"
+    "typescript": "5.9.3"
   },
   "description": "Plyli form builder, API and standalone TypeScript engine",
   "license": "MIT"

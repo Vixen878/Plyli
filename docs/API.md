@@ -28,7 +28,7 @@ The archive is optional for self-hosted deployments.
 
 ## Authentication
 
-Dashboard users send Better Auth cookies (`better-auth.session_token`, or `__Secure-better-auth.session_token` in production HTTPS). All cookie-authenticated mutation requests must send `Origin` exactly matching `BETTER_AUTH_URL` (normal same-origin browser fetch does this). Bearer credentials send `Authorization: Bearer plyli_...`; they are server-to-server secrets and never belong in client bundles. Invalid Authorization headers do not fall back to a session. Public endpoints below are anonymous and return only published definitions/receipts.
+Dashboard users send Better Auth cookies (`better-auth.session_token`, or `__Secure-better-auth.session_token` in production HTTPS). Cookie-authenticated writes require an `Origin` matching `BETTER_AUTH_URL`. Bearer credentials send `Authorization: Bearer plyli_...` and belong in server-side code. Invalid Authorization headers do not fall back to a session. Published definitions are available without credentials. Public submission endpoints also recognize a signed-in respondent when a session cookie is present.
 
 Scopes: `forms:read`, `forms:write`, `forms:publish`, `submissions:read`, `submissions:write`, `submissions:delete`, `analytics:read`. OWNER/EDITOR can manage forms; VIEWER can read. Only OWNER sessions administer keys, access policies and retention. Account imports permit owner/editor sessions. API keys cannot administer keys/policies/retention, provision workspaces or import account data. Optional formIds bind a key to selected workspace forms; form-bound keys cannot create forms. Supplied metadata confers no privileges.
 
@@ -82,6 +82,12 @@ Run this from your backend or within the Plyli origin. Cross-origin browser API 
 Submission input accepts revision, answers, durationSeconds?, attribution?, viewport?, sessionId?, externalContext?. Context must match the form's allowlist, required flags and scalar types. Anonymous context is rejected unless explicitly enabled. Input never accepts visitedQuestionIds or ownership/authorization claims. Unknown/skipped answer IDs are ignored by engine normalization; reachable required fields are validated server-side. Each response points to its exact revision.
 
 The receipt is `{id,formRevision,submittedAt,replayed}`; first write is 201, identical replay 200. Reusing a key for a different payload returns 409. Unpublishing closes retries as well as new submissions. Raw request bodies and answer data never appear in audit records.
+
+The Share dialog lets form editors reserve a custom public slug and choose a response policy. Old slugs and original links still resolve to the same published form. Public submissions count a verified Plyli session as the respondent. An authenticated integration may send `X-Plyli-Respondent` with a stable, opaque identifier for a respondent it has verified. The header is available only to scoped API key requests. Keep the identifier stable across retries and avoid email addresses or other personal data. With one response per identified respondent, repeat submissions using a new idempotency key return `409 ALREADY_SUBMITTED`. Forms that require identification reject unidentified requests with `403 RESPONDENT_REQUIRED`. Anonymous API submissions are otherwise permitted.
+
+Send `X-Plyli-Respondent` in a direct HTTP request. The SDK's `submit()` method in 0.2.2 does not take a respondent identifier.
+
+Editors can close responses manually or set a deadline under **Share → Response availability**. Closed forms still resolve, but new public and integration submissions return `409 FORM_CLOSED`. Retrying an accepted submission with the same idempotency key still returns its receipt. Public social previews show the count of responses outside the trash.
 
 Authentication/key creation uses same-origin session calls. Example key body: `{ "name": "Event backend", "scopes": ["forms:read", "forms:write", "submissions:read"] }`. Save the returned secret in your external backend's secret store. Workspace IDs are selectors; the service also checks key ownership and requested scope. External respondent authentication/business operations stay with the host app. The headless engine can be used locally without hosted API calls; imports under core remain free of framework/database/browser dependencies.
 

@@ -113,17 +113,32 @@ model Form {
   version           Int            @default(1)
   publishedRevision Int?
   publicSlug        String         @unique @default(uuid()) @db.VarChar(191)
+  shareSlug         String?        @db.VarChar(64)
+  submissionPolicy  String         @default("one") @db.VarChar(16)
+  responsesClosed   Boolean        @default(false)
+  responsesEndAt    DateTime?
+  closedMessage     String?        @db.VarChar(500)
+  submittedMessage  String?        @db.VarChar(500)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   archivedAt        DateTime?
   integrationPolicy Json?
   workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   revisions         FormRevision[]
+  slugAliases       FormSlug[]
   // Publishing pointers reference an existing revision inside this form in services.
   // Exact submission integrity is additionally enforced by a composite FK below.
 
   @@unique([workspaceId, id])
   @@index([workspaceId, archivedAt, id])
+}
+
+model FormSlug {
+  slug    String @id @db.VarChar(64)
+  formId  String @db.VarChar(191)
+  form    Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
 }
 
 model FormRevision {
@@ -151,9 +166,11 @@ model Submission {
   purgedAt       DateTime?
   idempotencyKey String?      @db.VarChar(128)
   requestHash    String?      @db.Char(64)
+  respondentKey  String?      @db.Char(64)
   revision       FormRevision @relation(fields: [workspaceId, formId, formRevision], references: [workspaceId, formId, revision], onDelete: Restrict)
 
   @@unique([workspaceId, formId, idempotencyKey])
+  @@unique([workspaceId, formId, respondentKey])
   @@index([workspaceId, formId, id])
   @@index([workspaceId, formId, submittedAt])
   @@index([workspaceId, deletedAt, submittedAt])

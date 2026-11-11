@@ -19,9 +19,11 @@ test('Better Auth Prisma sessions enforce signed, unexpired cookies and sign-out
   const providerLocation = providerError.headers.get('location');
   assert.ok(providerLocation);
   assert.equal(new URL(providerLocation, origin).pathname, '/login/error');
-  const cleanRedirect = signInErrorRedirect();
+  const cleanRedirect = signInErrorRedirect(new Request(`${origin}/login/error?next=//example.invalid&error_description=internal-provider-detail`));
   assert.equal(cleanRedirect.status, 303);
   assert.equal(cleanRedirect.headers.get('location'), `${origin}/login?error=sign_in_failed`);
+  const retry = signInErrorRedirect(new Request(`${origin}/login/error?next=%2Ff%2Fevent-rsvp&error_description=private`));
+  assert.equal(retry.headers.get('location'), `${origin}/login?error=sign_in_failed&next=%2Ff%2Fevent-rsvp`);
   const signed = encodeURIComponent(`${token}.${createHmac('sha256', secret).update(token).digest('base64')}`);
   const cookie = `better-auth.session_token=${signed}`;
   try {
@@ -31,6 +33,12 @@ test('Better Auth Prisma sessions enforce signed, unexpired cookies and sign-out
     assert.equal(await auth.api.getSession({ headers: new Headers({ cookie: 'better-auth.session_token=forged' }) }), null);
     const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
     assert.equal(session?.user.id, id);
+    const profileChange = await auth.handler(new Request(`${origin}/api/auth/update-user`, {
+      method: 'POST', headers: { cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Updated fixture profile' }),
+    }));
+    assert.equal(profileChange.status, 200);
+    assert.equal((await db.user.findUniqueOrThrow({ where: { id } })).name, 'Updated fixture profile');
     const deps = { database: db, origin, sessionUserId: async (headers: Headers) => (await auth.api.getSession({ headers }))?.user.id ?? null };
     const denied = await handleApiRequest(new Request(`${origin}/api/v1/workspaces/personal`, { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', Origin: origin } }), ['workspaces', 'personal'], deps);
     assert.equal(denied.status, 401);

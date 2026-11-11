@@ -64,6 +64,38 @@ import {
   resolveFormAppearance,
   getContrastingTextColor,
 } from '../themes/appearance-registry';
+import { shareSlugSchema, suggestShareSlug } from './form-sharing';
+import { authDestination } from './auth-destination';
+import { reconcileSavedDraft } from './draft-save';
+
+test('a draft save preserves edits made in flight and ignores another open form', () => {
+  const sent = createEventRsvpForm('sent-form');
+  const saved = { ...sent, revision: sent.revision + 1, updatedAt: '2026-11-10T00:00:00.000Z' };
+  const inFlightEdit = { ...sent, title: 'An edit made while saving' };
+  assert.equal(reconcileSavedDraft(sent, sent, saved), saved);
+  assert.deepEqual(reconcileSavedDraft(inFlightEdit, sent, saved), { ...saved, title: inFlightEdit.title });
+  const differentForm = createEventRsvpForm('another-form');
+  assert.equal(reconcileSavedDraft(differentForm, sent, saved), differentForm);
+});
+
+test('conditional skips and the simulated path do not produce structural reachability warnings', () => {
+  const form = createEventRsvpForm();
+  const active = deriveFlowGraph(form, { q_rsvp_attending: 'No' });
+  assert.deepEqual(active.diagnostics.unreachableQuestionIds, []);
+  assert.ok(!active.activePathQuestionIds.includes('q_rsvp_guests'));
+  assert.ok(active.activePathQuestionIds.includes('q_rsvp_note'));
+  assert.ok(deriveFlowGraph(form, { q_rsvp_attending: 'Yes' }).activePathQuestionIds.includes('q_rsvp_guests'));
+});
+
+test('sharing slugs and auth destinations reject reserved or unsafe URL values', () => {
+  assert.equal(suggestShareSlug(' Café + Studio Night! '), 'cafe-studio-night');
+  assert.equal(suggestShareSlug('🎟'), 'my-form');
+  for (const slug of ['a/b', 'A--B', '7ae7f753-333e-453f-82cb-ddc13ff74713']) assert.equal(shareSlugSchema.safeParse(slug).success, false);
+  assert.equal(authDestination('/f/cafe-studio-night'), '/f/cafe-studio-night');
+  assert.equal(authDestination('/f/cafe-studio-night?UTM_SOURCE=newsletter&utm_medium=email'), '/f/cafe-studio-night?utm_source=newsletter&utm_medium=email');
+  assert.equal(authDestination('/f/cafe-studio-night?utm_source=ok&redirect=//example.invalid'), '/dashboard');
+  for (const next of ['//example.com', '/f/../account', '/f/foo?token=secret', '/f/%2F%2Fexternal']) assert.equal(authDestination(next), '/dashboard');
+});
 
 test('1. Validation: short_text and long_text enforce required, whitespace trimming, minLength, and maxLength', () => {
   const shortQ = createDefaultQuestion('short_text');
@@ -1541,6 +1573,8 @@ test('26. Historical Submissions Without Analytics Events: Zero Fabricated Views
   assert.equal(report.overview.viewToStartRate, null);
   assert.equal(report.overview.startToCompletionRate, null);
   assert.equal(report.overview.viewToCompletionRate, null);
+  assert.equal(report.questions.find((question) => question.questionId === 'q_rsvp_name')?.reachedCount, 1);
+  assert.equal(report.questions.find((question) => question.questionId === 'q_rsvp_guests')?.reachedCount, 0);
 
   // Completion time from the historical submission record is still accurately reported
   assert.equal(report.overview.avgCompletionSeconds, 42);

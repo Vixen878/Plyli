@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import { Bricolage_Grotesque, Plus_Jakarta_Sans, JetBrains_Mono, Fraunces } from 'next/font/google';
 import './globals.css';
+import { siteDescription, siteTitle } from '@/lib/social-metadata';
 
 const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
@@ -27,18 +28,11 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Plyli — Make forms. Shape flows.',
-  description: 'Build expressive forms, shape branching flows, and embed questions in your applications with Plyli’s headless engine and API.',
-  openGraph: {
-    title: 'Plyli — Make forms. Shape flows.',
-    description: 'Forms with personality. A headless engine and API for your applications.',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Plyli — Make forms. Shape flows.',
-    description: 'Forms with personality. A headless engine and API for your applications.',
-  },
+  title: siteTitle,
+  description: siteDescription,
+  metadataBase: process.env.BETTER_AUTH_URL && URL.canParse(process.env.BETTER_AUTH_URL)
+    ? new URL(new URL(process.env.BETTER_AUTH_URL).origin)
+    : undefined,
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
