@@ -323,7 +323,7 @@
       },
       "post": {
         "operationId": "createForm",
-        "summary": "Create form (forms:write)",
+        "summary": "Create form (forms:write or forms:provision-private)",
         "security": [
           {
             "sessionCookie": []
@@ -5775,6 +5775,58 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "integrationPolicy": {
+            "description": "Initial policy. Owners can set either mode. API keys can set only private mode and need workspace-wide access with forms:provision-private. Omit this field for regular draft creation with forms:write.",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "default": "public",
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "allowPublicContext": {
+                "default": false,
+                "type": "boolean"
+              },
+              "contextFields": {
+                "default": [],
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 191,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    },
+                    "required": {
+                      "default": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "type"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
           "definition": {
             "type": "object",
             "properties": {
@@ -7682,7 +7734,7 @@
           },
           "scopes": {
             "minItems": 1,
-            "maxItems": 7,
+            "maxItems": 8,
             "type": "array",
             "items": {
               "type": "string",
@@ -7690,6 +7742,7 @@
                 "forms:read",
                 "forms:write",
                 "forms:publish",
+                "forms:provision-private",
                 "submissions:read",
                 "submissions:write",
                 "submissions:delete",
@@ -10066,6 +10119,7 @@
                 "forms:read",
                 "forms:write",
                 "forms:publish",
+                "forms:provision-private",
                 "submissions:read",
                 "submissions:write",
                 "submissions:delete",
@@ -11478,6 +11532,7 @@
                 "forms:read",
                 "forms:write",
                 "forms:publish",
+                "forms:provision-private",
                 "submissions:read",
                 "submissions:write",
                 "submissions:delete",

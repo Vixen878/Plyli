@@ -17,6 +17,10 @@ test('human API reference preserves auth, idempotency and schema fields from Ope
   assert.ok(submit); assert.equal(submit.access, 'submissions:write'); assert.equal(submit.idempotency, true);
   assert.equal(submit.request.find((f) => f.name === 'revision')?.required, true);
   assert.equal(submit.request.find((f) => f.name === 'externalContext')?.required, false);
+  const provision = reference.endpoints.find((e) => e.operationId === 'createForm');
+  assert.ok(provision);
+  assert.ok(provision.access.includes('forms:provision-private'));
+  assert.equal(provision.request.find((field) => field.name === 'integrationPolicy')?.required, false);
   const keys = reference.endpoints.find((e) => e.path.endsWith('/keys') && e.method === 'POST');
   assert.equal(keys?.access, 'owner session only'); assert.equal(keys?.public, false);
   const publicRead = reference.endpoints.find((e) => e.path === '/public/forms/{slug}' && e.method === 'GET');

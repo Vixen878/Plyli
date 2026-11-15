@@ -12,6 +12,8 @@ Requires an ESM project and Node.js 22 or later.
 pnpm add @plyli/sdk
 ```
 
+Private provisioning requires SDK 0.3.0 or later and a Plyli server running 0.3.0 or later. If pnpm installs an earlier SDK, use the instance archive below.
+
 Set `baseUrl` on `PlyliClient` to any compatible Plyli server, including a self-hosted deployment.
 
 ### Self-hosted SDK archive (alternative)
@@ -19,7 +21,7 @@ Set `baseUrl` on `PlyliClient` to any compatible Plyli server, including a self-
 If you need the SDK build that ships with a particular instance, install its versioned archive.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.3.0.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. You can also download it and run `pnpm add '<full-path-to-downloaded-archive>'`.
@@ -81,7 +83,8 @@ Every implemented API operation has a client method. The running instance's `/ap
 | Capability | Methods | Access |
 | --- | --- | --- |
 | Workspace | `provisionWorkspace` | Signed-in session |
-| Drafts and archive | `listForms`, `iterateForms`, `getForm`, `createForm`, `saveDraft`, `archiveForm`, `restoreForm` | Matching forms read/write scopes |
+| Drafts and archive | `listForms`, `iterateForms`, `getForm`, `saveDraft`, `archiveForm`, `restoreForm` | Matching forms read/write scopes |
+| Creation | `createForm` | Workspace-wide `forms:write` for regular drafts or `forms:provision-private` for private provisioning |
 | Publishing | `publish`, `unpublish`, `getPublishedForm`, `listRevisions` | forms:publish or forms:read |
 | Validation and responses | `validateSubmission`, `submit`, `listSubmissions`, `deleteResponse`, `deleteAllResponses`, `listDeletedResponses`, `restoreResponse` | Matching submissions scope |
 | Analytics | `listAnalyticsEvents` | analytics:read |
@@ -92,6 +95,25 @@ Every implemented API operation has a client method. The running instance's `/ap
 | Public forms | `getPublicForm`, `submitPublic` | Anonymous public flow |
 
 A key is restricted to its workspace, scopes and optional form allowlist. Changes require the latest `expectedVersion`; reload and review a 409 conflict before saving. Published submissions use the exact rendered revision. SDK writes are not retried automatically. Reusing an idempotency key with a changed payload returns 409.
+
+### Create a private draft
+
+On a Plyli server running 0.3.0 or later, use an owner session or a workspace-wide API key with `forms:provision-private`.
+
+```ts
+import type { CreateFormOptions } from '@plyli/sdk';
+
+const options = {
+  integrationPolicy: {
+    mode: 'private',
+    contextFields: [{ key: 'eventId', type: 'string', required: true }],
+  },
+} satisfies CreateFormOptions;
+
+const draft = await plyli.createForm(workspaceId, definition, options);
+```
+
+`definition` is a Plyli form definition. The form and policy are saved together, and the result is an unpublished draft. Publishing requires `forms:publish`. The two-argument `createForm(workspaceId, definition)` call still creates a regular draft.
 
 List methods return `{ data, nextCursor }` and accept `{ limit, cursor }`. Limit is 1–100. `listForms` also accepts `archived: true`; it lists active forms by default. `listRevisions` uses numeric cursors; other cursors are strings. Null ends pagination.
 

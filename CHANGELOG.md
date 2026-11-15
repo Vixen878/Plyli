@@ -1,5 +1,11 @@
 # Changelog
 
+## Plyli 0.3.0
+
+- Workspace owners and approved integrations can create drafts with a private policy and a contextual metadata allowlist in a single operation.
+- The workspace-wide `forms:provision-private` scope grants private creation only. Existing creation and policy editing permissions continue to apply.
+- `@plyli/sdk` 0.3.0 adds optional provisioning settings to `createForm()`. The server uses the existing database schema.
+
 ## Plyli 0.2.0
 
 - Share published forms with custom links, QR codes, embed snippets, campaign links, and social previews. Original links and previous custom slugs continue to resolve.
@@ -11,4 +17,4 @@
 
 Apply both new migrations with `pnpm db:deploy` before starting the new application. Existing links and responses are preserved. Previously stored responses have no respondent identifier, so the new duplicate checks apply to identified responses recorded after the upgrade.
 
-`@plyli/sdk` remains at 0.2.2. Use a direct HTTP request when passing the optional respondent header.
+`@plyli/sdk` 0.2.2 was the SDK release at the time. Passing the optional respondent header required a direct HTTP request.

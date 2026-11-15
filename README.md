@@ -15,7 +15,7 @@ pnpm dev
 
 Create a database and a dedicated password-protected MySQL user. Set `DATABASE_URL` in `.env`; URL-encode password characters. For integration tests, create a separate database ending in `_test` and set `TEST_DATABASE_URL`. Never use a production database for tests.
 
-An optional local database is provided in `compose.yaml`. Set `PLYLI_MYSQL_PASSWORD`, run `docker compose up -d`, and configure the app to connect to its published port, 3308. This avoids the common 3306 port used by an existing MySQL installation. The Compose service creates the development database; test database permissions are separate.
+The optional local database in `compose.yaml` runs MySQL 8.4. CI runs compatibility tests on MySQL 8.0. Set `PLYLI_MYSQL_PASSWORD`, run `docker compose up -d`, and configure the app to connect on port 3308. The Compose service creates the development database. Configure test database permissions separately.
 
 Set `BETTER_AUTH_URL` to the origin where you run Plyli and generate a strong `BETTER_AUTH_SECRET`. For Google sign-in, configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and register `<BETTER_AUTH_URL>/api/auth/callback/google` with Google. Use HTTPS in production. Restart the app after changing environment configuration.
 
@@ -39,6 +39,8 @@ Browse `/api-reference` for endpoint schemas and examples, or download `/openapi
 pnpm add @plyli/sdk
 ```
 
+Private provisioning requires SDK 0.3.0 or later and a Plyli server running 0.3.0 or later. If pnpm installs an earlier SDK, use the instance archive below.
+
 The [official SDK](https://www.npmjs.com/package/@plyli/sdk) works with any compatible Plyli server. Set `baseUrl` on `PlyliClient` to the server you want to use, including a self-hosted deployment.
 
 ### Self-hosted SDK archive (alternative)
@@ -46,7 +48,7 @@ The [official SDK](https://www.npmjs.com/package/@plyli/sdk) works with any comp
 If you need the SDK build that ships with a particular instance, install its versioned archive.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.3.0.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. To rebuild the archive for your own instance, run `pnpm sdk:package` from the Plyli repository. See the [SDK guide](packages/sdk/README.md) and [integration guide](docs/DEVELOPER-EXPERIENCE.md).

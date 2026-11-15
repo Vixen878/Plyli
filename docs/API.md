@@ -2,7 +2,7 @@
 
 Base: `/api/v1`. Successful single-resource responses are `{ "data": ... }`. Lists are `{ "data": [...], "nextCursor": "..." | null }`. Errors are `{ "error": { "code", "message", "requestId", "details"? } }`. Every response includes `X-Request-Id` and `Cache-Control: no-store`. No stack traces, DB details or credentials are returned by error handlers.
 
-Contracts: `core/contracts.ts`; OpenAPI: `/openapi.json` (generated using Zod JSON Schema). Versioned changes remain additive within v1; a breaking change requires v2. Definition schemaVersion and immutable revision numbers are separate from HTTP API version and optimistic form version.
+The generated `/openapi.json` uses the OpenAPI 3.1.0 format. Its `info.version` is 1.0.0 for the v1 HTTP contract, which supports additive changes like private provisioning. The application and SDK have their own release versions. Stored form definitions use schema version 2. Immutable revision numbers and optimistic form versions are per-form counters.
 
 ## TypeScript client
 
@@ -14,6 +14,8 @@ The running instance’s `/api-reference` defaults to TypeScript SDK examples fo
 pnpm add @plyli/sdk
 ```
 
+Private provisioning requires SDK 0.3.0 or later and a Plyli server running 0.3.0 or later. If pnpm installs an earlier SDK, use the instance archive below.
+
 Configure `PlyliClient` with the `baseUrl` of any compatible Plyli server, including a self-hosted deployment.
 
 ### Self-hosted SDK archive (alternative)
@@ -21,22 +23,22 @@ Configure `PlyliClient` with the `baseUrl` of any compatible Plyli server, inclu
 If you need the SDK build that ships with a specific instance, install its versioned archive. Replace the example origin with that server's URL.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.3.0.tgz'
 ```
 
 The archive is optional for self-hosted deployments.
 
 ## Authentication
 
-Dashboard users send Better Auth cookies (`better-auth.session_token`, or `__Secure-better-auth.session_token` in production HTTPS). Cookie-authenticated writes require an `Origin` matching `BETTER_AUTH_URL`. Bearer credentials send `Authorization: Bearer plyli_...` and belong in server-side code. Invalid Authorization headers do not fall back to a session. Published definitions are available without credentials. Public submission endpoints also recognize a signed-in respondent when a session cookie is present.
+Dashboard users send Better Auth cookies (`better-auth.session_token`, or `__Secure-better-auth.session_token` in production HTTPS). Cookie-authenticated writes require an `Origin` matching `BETTER_AUTH_URL`. Bearer credentials send `Authorization: Bearer plyli_...` and belong in server-side code. Invalid Authorization headers do not fall back to a session. Published public forms are available without credentials. Private forms require authorized workspace access. Public submission endpoints also recognize a signed-in respondent when a session cookie is present.
 
-Scopes: `forms:read`, `forms:write`, `forms:publish`, `submissions:read`, `submissions:write`, `submissions:delete`, `analytics:read`. OWNER/EDITOR can manage forms; VIEWER can read. Only OWNER sessions administer keys, access policies and retention. Account imports permit owner/editor sessions. API keys cannot administer keys/policies/retention, provision workspaces or import account data. Optional formIds bind a key to selected workspace forms; form-bound keys cannot create forms. Supplied metadata confers no privileges.
+Scopes include `forms:read`, `forms:write`, `forms:publish`, `forms:provision-private`, `submissions:read`, `submissions:write`, `submissions:delete`, and `analytics:read`. Owner and editor sessions manage forms. Viewers can read. Owner sessions administer keys, existing access policies, and retention. Account imports permit owner and editor sessions. Optional `formIds` bind a key to selected workspace forms. Creation requires workspace-wide access. Owners can only grant `forms:provision-private` to workspace-wide keys.
 
 | Method and path | Access | Behavior |
 | --- | --- | --- |
 | POST `/workspaces/personal` | Session | Body `{}`; provisions own workspace idempotently, returns `{id,name,role}`. |
 | GET `/workspaces/{workspaceId}/forms` | forms:read | Active form documents; `limit` 1..100 (default 50), opaque ID `cursor`; `archived=true` selects archived forms. |
-| POST `/workspaces/{workspaceId}/forms` | forms:write | `{definition}`; normalizes server revision/timestamps; ID conflicts return 409, never overwrite. |
+| POST `/workspaces/{workspaceId}/forms` | forms:write or forms:provision-private | `{definition, integrationPolicy?}`. Creates an unpublished draft and saves the initial policy in the same transaction. ID conflicts return 409. |
 | GET `/workspaces/{workspaceId}/forms/{formId}` | forms:read | `{definition,version,publicSlug,publishedRevision,archivedAt}`. |
 | PUT `/workspaces/{workspaceId}/forms/{formId}` | forms:write | `{expectedVersion,definition}`; next full immutable revision, 409 on stale version. |
 | DELETE `/workspaces/{workspaceId}/forms/{formId}` | forms:write | JSON `{expectedVersion}`; archives, retains responses/history. |
@@ -56,6 +58,8 @@ All IDs use bounded safe identifiers. JSON mutations require application/json. G
 Cursor lists sort stable IDs ascending (revisions numerically); nextCursor is exclusive. Pages are bounded, not a snapshot transaction. New insertions may require a fresh traversal. Dates are ISO 8601 UTC. There are no unbounded list endpoints, hard-delete endpoint, answer export endpoint, server analytics aggregate endpoint or live event-ingestion endpoint yet. The dashboard paginates retrieval and reuses existing export/report utilities. Form appearance is included in definitions; duplication uses create with a new ID.
 
 ## External integration example
+
+For private provisioning, send `{ definition, integrationPolicy: { mode: 'private' } }` to the create endpoint. A workspace-wide key with `forms:provision-private` can do this without `forms:write`. The scope grants private creation only. Owners may set either initial policy. Omit the policy to use regular draft creation, which accepts workspace-wide keys with `forms:write` and owner or editor sessions. Publish requires a separate permission and does not change the saved policy.
 
 ```ts
 import { PlyliClient, type SubmissionInput } from '@plyli/sdk';
@@ -85,7 +89,7 @@ The receipt is `{id,formRevision,submittedAt,replayed}`; first write is 201, ide
 
 The Share dialog lets form editors reserve a custom public slug and choose a response policy. Old slugs and original links still resolve to the same published form. Public submissions count a verified Plyli session as the respondent. An authenticated integration may send `X-Plyli-Respondent` with a stable, opaque identifier for a respondent it has verified. The header is available only to scoped API key requests. Keep the identifier stable across retries and avoid email addresses or other personal data. With one response per identified respondent, repeat submissions using a new idempotency key return `409 ALREADY_SUBMITTED`. Forms that require identification reject unidentified requests with `403 RESPONDENT_REQUIRED`. Anonymous API submissions are otherwise permitted.
 
-Send `X-Plyli-Respondent` in a direct HTTP request. The SDK's `submit()` method in 0.2.2 does not take a respondent identifier.
+Send `X-Plyli-Respondent` in a direct HTTP request.
 
 Editors can close responses manually or set a deadline under **Share → Response availability**. Closed forms still resolve, but new public and integration submissions return `409 FORM_CLOSED`. Retrying an accepted submission with the same idempotency key still returns its receipt. Public social previews show the count of responses outside the trash.
 

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, ChevronRight, Clock3, FileCode2, GitBranch, KeyRound, Layers, Search } from 'lucide-react';
-import { sdkArchivePath, sdkVersion } from '@/lib/sdk-distribution';
+import { privateProvisioningSdkNotice, sdkArchivePath, sdkVersion } from '@/lib/sdk-distribution';
 import { CodeBlock } from './reference-code';
 import { SdkGuide } from './sdk-guide';
 import { makeExample, exampleLanguages, parseApiOrigin, type ExampleLanguage } from '@/lib/api-examples';
@@ -61,6 +61,7 @@ export function ApiReference({ data, sessionCookieName }: { data: ApiReferenceDa
               <a href={sdkArchivePath} download className={`${linkButton} bg-[#F6D97A] hover:bg-[#f2d063]`}>Download SDK <span className="font-mono text-xs">v{sdkVersion}</span></a>
             </div>
             <CodeBlock label="Official npm package (recommended)" code="pnpm add @plyli/sdk" />
+            <p className="text-sm text-[#6E655E]">{privateProvisioningSdkNotice}</p>
             <p className="text-sm text-[#6E655E]">Set <code>baseUrl</code> to any compatible Plyli server, including a self-hosted deployment.</p>
             <p className="text-sm text-[#6E655E]">Use the optional archive when you need the SDK build that ships with this instance.</p>
             <CodeBlock label="Self-hosted SDK archive (alternative)" code={`pnpm add '${instanceOrigin}${sdkArchivePath}'`} />

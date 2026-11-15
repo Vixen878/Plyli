@@ -53,7 +53,11 @@ export function buildApiReference(raw: unknown, formExample: unknown): ApiRefere
     const responseSchema = success?.content?.['application/json']?.schema;
     const group = path.includes('/analytics-events') ? 'Analytics' : path.includes('/revisions') ? 'Revisions' : path.startsWith('/public') ? 'Public forms' : path.includes('/keys') ? 'API keys' : path.includes('/retention') ? 'Data retention' : path.includes('/submissions') ? 'Responses' : /integration|published|validate/.test(path) ? 'Integrations' : path.includes('/imports') ? 'Backups' : path.includes('/personal') ? 'Workspaces' : 'Forms';
     let example = requestSchema ? sample(requestSchema) : undefined;
-    if (method === 'post' && path.endsWith('/forms') || method === 'put' && /\/forms\/\{formId\}$/.test(path)) example = method === 'put' ? { expectedVersion: 1, definition: formExample } : { definition: formExample };
+    if (operation.operationId === 'saveDraft') example = { expectedVersion: 1, definition: formExample };
+    if (operation.operationId === 'createForm') example = {
+      definition: formExample,
+      integrationPolicy: { mode: 'private', contextFields: [{ key: 'eventId', type: 'string', required: true }] },
+    };
     if (method === 'post' && /submissions$|\/validate$/.test(path)) example = { revision: 1, answers: { q_name: 'Avery' } };
     if (method === 'post' && path.endsWith('/keys')) example = { name: 'Registration app', scopes: ['forms:read', 'submissions:write'], formIds: ['form_123'] };
     if (method === 'post' && path.endsWith('/imports')) example = { schemaVersion: 2, exportedAt: '2026-11-04T10:00:00Z', app: 'plyli', forms: [formExample], responses: [], revisions: [], fullRevisions: [], analyticsEvents: [] };

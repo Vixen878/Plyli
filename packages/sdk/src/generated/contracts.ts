@@ -141,12 +141,19 @@ export const analyticsEventSchema = z.strictObject({
   attribution: attributionSchema.optional(), viewport: viewportSchema.optional(), sessionSource: sessionSourceSchema, dedupeKey: shortText.optional(),
 }) satisfies z.ZodType<AnalyticsEvent>;
 
-export const scopeSchema = z.enum(['forms:read', 'forms:write', 'forms:publish', 'submissions:read', 'submissions:write', 'submissions:delete', 'analytics:read']);
+export const scopeSchema = z.enum(['forms:read', 'forms:write', 'forms:publish', 'forms:provision-private', 'submissions:read', 'submissions:write', 'submissions:delete', 'analytics:read']);
 export type ApiScope = z.infer<typeof scopeSchema>;
-export const createFormSchema = z.strictObject({ definition: formDefinitionSchema });
 export const updateFormSchema = z.strictObject({ expectedVersion: z.number().int().positive(), definition: formDefinitionSchema });
 export const versionSchema = z.strictObject({ expectedVersion: z.number().int().positive() });
-export const createKeySchema = z.strictObject({ name: z.string().min(1).max(100), scopes: z.array(scopeSchema).min(1).max(7), expiresAt: timestamp.optional(), formIds: z.array(resourceId).min(1).max(100).nullable().optional() });
+export const createKeySchema = z.strictObject({
+  name: z.string().min(1).max(100),
+  scopes: z.array(scopeSchema).min(1).max(scopeSchema.options.length),
+  expiresAt: timestamp.optional(),
+  formIds: z.array(resourceId).min(1).max(100).nullable().optional(),
+}).refine(({ scopes, formIds }) => !formIds || !scopes.includes('forms:provision-private'), {
+  path: ['scopes'],
+  message: 'Private provisioning requires a workspace-wide key.',
+});
 export const submissionInputSchema = z.strictObject({
   revision: z.number().int().positive(), answers: answersSchema,
   durationSeconds: z.number().finite().min(0).max(86400).optional(), attribution: attributionSchema.optional(),
@@ -181,6 +188,12 @@ export const integrationPolicySchema = z.strictObject({
   if (policy.mode === 'public' && policy.contextFields.some((f) => f.required)) ctx.addIssue({ code: 'custom', message: 'Required context fields need a private integration. Public forms accept optional context only.' });
 });
 export type IntegrationPolicy = z.infer<typeof integrationPolicySchema>;
+export const createFormOptionsSchema = z.strictObject({
+  integrationPolicy: integrationPolicySchema.optional().describe(
+    'Initial policy. Owners can set either mode. API keys can set only private mode and need workspace-wide access with forms:provision-private. Omit this field for regular draft creation with forms:write.',
+  ),
+});
+export const createFormSchema = createFormOptionsSchema.extend({ definition: formDefinitionSchema });
 export const integrationSettingsSchema = z.strictObject({ expectedVersion: z.number().int().positive(), policy: integrationPolicySchema });
 export const retentionSettingsSchema = z.strictObject({ responseRetentionDays: z.number().int().min(1).max(3650).nullable(), trashRetentionDays: z.number().int().min(1).max(30) });
 export const keyInfoSchema = z.strictObject({

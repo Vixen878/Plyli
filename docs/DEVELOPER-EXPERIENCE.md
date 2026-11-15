@@ -10,6 +10,8 @@ The `/api-reference` page provides searchable endpoints, authentication requirem
 pnpm add @plyli/sdk
 ```
 
+Private provisioning requires SDK 0.3.0 or later and a Plyli server running 0.3.0 or later. If pnpm installs an earlier SDK, use the instance archive below.
+
 The `@plyli/sdk` entry point provides the HTTP client, and `@plyli/sdk/engine` provides the standalone engine and contracts. The package uses ESM and includes TypeScript declarations. Set `baseUrl` on `PlyliClient` to any compatible Plyli server, including a self-hosted deployment.
 
 ### Self-hosted SDK archive (alternative)
@@ -17,7 +19,7 @@ The `@plyli/sdk` entry point provides the HTTP client, and `@plyli/sdk/engine` p
 To use the build that ships with a particular instance, install the versioned archive it serves.
 
 ```sh
-pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.2.2.tgz'
+pnpm add 'https://your-plyli-instance.example/downloads/plyli-sdk-0.3.0.tgz'
 ```
 
 Replace the example origin with your Plyli server. The archive is optional for self-hosted deployments. See the [SDK guide](../packages/sdk/README.md) for runtime requirements and usage examples.
@@ -28,14 +30,16 @@ The Developers page manages API keys. Each key has scopes, expiry, display prefi
 
 For a host registration/event/customer application:
 
-1. Build and publish the additional questions in Plyli.
-2. Open Integration in the editor. Choose Private integration and define typed allowed metadata keys, for example required strings eventId and registrationId.
+1. Build the additional questions in Plyli. Open Integration, choose Private integration, and define any metadata fields your backend will supply.
+2. Publish the private form.
 3. Create a form-bound key with forms:read and submissions:write. Keep it in the host backend's environment.
 4. Your backend calls `plyli.getPublishedForm(workspaceId, formId)`. Render it in your own frontend. Your application retains its login and business lifecycle.
 5. Authorize the respondent in your backend and derive contextual IDs from trusted application state.
 6. Validate with the headless engine or `plyli.validateSubmission`, then call `plyli.submit` with the exact published revision and a stable idempotency key.
 
-Private mode makes anonymous definition reads, `/f/{slug}` and public submissions return 404 immediately. Changing access policies requires an owner session, expectedVersion, and an audit entry. A forms:write key cannot make a private form public. The definition is an immutable published revision; the policy is a live security boundary.
+To automate the first step, use a workspace-wide key with `forms:provision-private` and call `createForm(workspaceId, definition, { integrationPolicy: { mode: 'private' } })`. You can include `contextFields` in the initial policy. The result is an unpublished private draft. Grant `forms:publish` separately if the application will publish drafts.
+
+Private mode makes anonymous definition reads, `/f/{slug}` and public submissions return 404 immediately. Changing an existing policy requires an owner session, expectedVersion, and an audit entry. The definition is an immutable published revision and the policy is applied when accessing the form.
 
 Context supports string/number/boolean values, required flags, at most 20 fields, bounded keys and strings up to 255 characters. Unknown keys and wrong types fail shared validation. Public forms reject context by default; owners can explicitly allow optional unverified public context. Required context needs private mode so the hosted public renderer is never blocked by application-only data. Metadata never grants access to a Plyli user/workspace. Context remains in the response, separate from behavioral events.
 

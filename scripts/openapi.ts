@@ -40,7 +40,7 @@ const page = (schema: unknown, numeric = false) => ({ type: 'object', required: 
 const root = '/workspaces/{workspaceId}'; const form = `${root}/forms/{formId}`;
 operation('/workspaces/personal', 'post', 'Provision personal workspace (session only)', envelope(reference('WorkspaceInfo')), { input: 'EmptyBody', sessionOnly: true });
 operation(`${root}/forms`, 'get', 'List forms (forms:read)', page(reference('FormDocument')), { pagination: 'id', archived: true });
-operation(`${root}/forms`, 'post', 'Create form (forms:write)', envelope(reference('FormDocument')), { input: 'CreateForm', created: true });
+operation(`${root}/forms`, 'post', 'Create form (forms:write or forms:provision-private)', envelope(reference('FormDocument')), { input: 'CreateForm', created: true });
 operation(form, 'get', 'Get form (forms:read)', envelope(reference('FormDocument')));
 operation(form, 'put', 'Update draft (forms:write)', envelope(reference('FormDocument')), { input: 'UpdateForm' });
 operation(form, 'delete', 'Archive form (forms:write)', envelope({ type: 'object', properties: { archived: { const: true } } }), { input: 'ExpectedVersion' });

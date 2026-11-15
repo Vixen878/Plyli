@@ -14,7 +14,7 @@ import { z } from 'zod';
 test('MySQL persistence, tenant boundaries and immutable history', async (t) => {
   assert.ok(new URL(process.env.DATABASE_URL ?? '').pathname.endsWith('_test'));
   const db = new PrismaClient(); const service = new FormService(db);
-  const userIds = Array.from({ length: 4 }, () => randomUUID());
+  const userIds = Array.from({ length: 5 }, () => randomUUID());
   const spaces: string[] = [];
   const owner: Principal = { kind: 'session', userId: userIds[0] };
   const other: Principal = { kind: 'session', userId: userIds[1] };
@@ -149,6 +149,53 @@ test('MySQL persistence, tenant boundaries and immutable history', async (t) => 
       const created = await service.create(writer, workspaceId, { definition: fresh });
       assert.equal(created.definition.id, fresh.id);
       await assert.rejects(service.get(writer, workspaceId, fresh.id), { status: 403 });
+    });
+
+    await t.test('private creation commits the policy, revision and audit together', async () => {
+      const privateDefinition = { ...definition, id: randomUUID() };
+      const policy = { mode: 'private', contextFields: [{ key: 'eventId', type: 'string', required: true }] };
+      await assert.rejects(service.createKey(owner, workspaceId, {
+        name: 'Invalid form-bound provisioner', scopes: ['forms:provision-private'], formIds: [definition.id],
+      }), { name: 'ZodError' });
+      const key = await service.createKey(owner, workspaceId, { name: 'Provisioner', scopes: ['forms:provision-private'], formIds: null });
+      const provisioner = await authenticateApiKey(db, `Bearer ${key.secret}`);
+      assert.equal(provisioner.kind, 'key');
+      const input = { definition: privateDefinition, integrationPolicy: policy };
+      await assert.rejects(service.create(provisioner, otherWorkspaceId, input), { status: 404 });
+      await assert.rejects(service.create(provisioner, workspaceId, { definition: privateDefinition }), { status: 403 });
+      await assert.rejects(service.create(provisioner, workspaceId, { ...input, integrationPolicy: { mode: 'public' } }), { status: 403 });
+      await assert.rejects(service.create({ ...provisioner, formIds: [definition.id] }, workspaceId, input), { status: 403 });
+      const editorId = userIds[4];
+      await db.membership.create({ data: { workspaceId, userId: editorId, role: 'EDITOR' } });
+      const editor = { kind: 'session' as const, userId: editorId };
+      await assert.rejects(service.create(editor, workspaceId, input), { status: 403 });
+      assert.equal(await db.form.count({ where: { id: privateDefinition.id } }), 0);
+
+      await db.$executeRaw`
+        ALTER TABLE AuditEvent ADD CONSTRAINT reject_policy_audit CHECK (action <> 'form.integration-policy')
+      `;
+      try {
+        await assert.rejects(service.create(provisioner, workspaceId, input), /reject_policy_audit/);
+      } finally {
+        await db.$executeRaw`ALTER TABLE AuditEvent DROP CHECK reject_policy_audit`;
+      }
+      assert.equal(await db.form.count({ where: { id: privateDefinition.id } }), 0);
+      assert.equal(await db.formRevision.count({ where: { formId: privateDefinition.id } }), 0);
+      assert.equal(await db.auditEvent.count({ where: { resourceId: privateDefinition.id } }), 0);
+
+      const created = await service.create(provisioner, workspaceId, input);
+      assert.equal(created.publishedRevision, null);
+      const stored = await db.form.findUniqueOrThrow({ where: { id: privateDefinition.id } });
+      assert.deepEqual(stored.integrationPolicy, { ...policy, allowPublicContext: false });
+      assert.equal(await db.formRevision.count({ where: { formId: privateDefinition.id } }), 1);
+      assert.equal(await db.auditEvent.count({ where: { resourceId: privateDefinition.id, actorId: key.id } }), 2);
+      await assert.rejects(service.publish(provisioner, workspaceId, privateDefinition.id, created.version), { status: 403 });
+      const ownerDraft = await service.create(owner, workspaceId, {
+        definition: { ...definition, id: randomUUID() }, integrationPolicy: { mode: 'public', allowPublicContext: true },
+      });
+      assert.equal((await db.form.findUniqueOrThrow({ where: { id: ownerDraft.definition.id } })).integrationPolicy !== null, true);
+      const editorDraft = await service.create(editor, workspaceId, { definition: { ...definition, id: randomUUID() } });
+      assert.equal((await db.form.findUniqueOrThrow({ where: { id: editorDraft.definition.id } })).integrationPolicy, null);
     });
 
     await t.test('bounded cursor lists and HTTP authentication/CSRF/contracts', async () => {

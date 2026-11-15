@@ -23,7 +23,7 @@ function sdkCall(endpoint: ReferenceEndpoint): string {
   const calls: Record<OperationId, string> = {
     provisionWorkspace: 'const workspace = await plyli.provisionWorkspace();',
     listForms: `const firstPage = await plyli.listForms(${ws}, ${page});\nif (firstPage.nextCursor) {\n  const nextPage = await plyli.listForms(${ws}, { limit: 25, cursor: firstPage.nextCursor });\n  console.log(nextPage.data);\n}`,
-    createForm: `const { definition } = ${body} satisfies { definition: FormDefinition };\nconst created = await plyli.createForm(${ws}, definition);`,
+    createForm: `const { definition, integrationPolicy } = ${body} satisfies { definition: FormDefinition } & CreateFormOptions;\nconst created = await plyli.createForm(${ws}, definition, { integrationPolicy });`,
     getForm: `const document = await plyli.getForm(${pair});`,
     saveDraft: `const current = await plyli.getForm(${pair});\nconst updated = await plyli.saveDraft(${pair}, current.version, {\n  ...current.definition, title: 'Event registration',\n});`,
     archiveForm: `const current = await plyli.getForm(${pair});\nconst result = await plyli.archiveForm(${pair}, current.version);`,
@@ -61,7 +61,7 @@ export function makeExample(endpoint: ReferenceEndpoint, language: ExampleLangua
     const setup = endpoint.public ? '' : session
       ? "// Run within the signed-in Plyli origin. The session's role is checked by the server.\n"
       : "// Server-side only. Set PLYLI_API_KEY in your backend's environment.\nconst apiKey = process.env.PLYLI_API_KEY;\nif (!apiKey) throw new Error('Set PLYLI_API_KEY');\n";
-    return `import { PlyliClient${endpoint.operationId === 'createForm' ? ', type FormDefinition' : endpoint.operationId === 'importBackup' ? ', type ImportBackup' : ''} } from '@plyli/sdk';\n\n${setup}const plyli = new PlyliClient({\n  baseUrl: ${JSON.stringify(origin)},\n${endpoint.public ? '' : session ? '  session: {},\n' : '  apiKey,\n'}});\n\n${sdkCall(endpoint)}`;
+    return `import { PlyliClient${endpoint.operationId === 'createForm' ? ', type FormDefinition, type CreateFormOptions' : endpoint.operationId === 'importBackup' ? ', type ImportBackup' : ''} } from '@plyli/sdk';\n\n${setup}const plyli = new PlyliClient({\n  baseUrl: ${JSON.stringify(origin)},\n${endpoint.public ? '' : session ? '  session: {},\n' : '  apiKey,\n'}});\n\n${sdkCall(endpoint)}`;
   }
   const path = endpoint.path.replace(/\{(\w+)\}/g, (_, name: string) => ({ workspaceId: 'ws_123', formId: 'form_123', responseId: 'response_123', credentialId: 'key_123', slug: 'published_slug' })[name] ?? name);
   const url = `${origin}/api/v1${path}`;

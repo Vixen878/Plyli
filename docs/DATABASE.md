@@ -2,6 +2,8 @@
 
 Prisma/MySQL schema: `prisma/schema.prisma`. Initial migration: `prisma/migrations/20261103222127_backend_foundation/migration.sql`.
 
+Plyli 0.3.0 private provisioning uses the existing integration policy column and requires no new migration.
+
 Plyli 0.2.0 adds `FormSlug` aliases, response availability settings, and a nullable respondent key with a per-form unique index. Existing forms keep their original public links and start with response collection open. Existing submissions retain their contents and have a null respondent key. MySQL permits multiple null values in the unique index. Back up the database, then run `pnpm db:deploy` before starting the updated application. Allow time for the submission index to build on large databases.
 
 | Model | Purpose and invariants |

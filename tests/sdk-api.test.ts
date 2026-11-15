@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { handleApiRequest } from '@/server/http';
 import { createBlankForm } from '@/lib/form-engine';
 import { formDefinitionSchema } from '@/core/contracts';
-import { PlyliClient, PlyliError, operations } from '../packages/sdk/dist/client.js';
+import { PlyliClient, PlyliError, operations, type CreateFormOptions } from '../packages/sdk/dist/client.js';
 
 test('all SDK operations use the real API contracts, permissions, pagination and recovery', async () => {
   assert.ok(new URL(process.env.DATABASE_URL ?? '').pathname.endsWith('_test'));
@@ -76,6 +76,37 @@ test('all SDK operations use the real API contracts, permissions, pagination and
     const pages = [];
     for await (const item of sdk.iterateForms(workspaceId, { limit: 1 })) pages.push(item);
     assert.equal(pages.length, 2);
+    const provisionKey = await session.createKey(workspaceId, { name: 'Provisioning fixture', scopes: ['forms:provision-private'], formIds: null });
+    const provisioner = new PlyliClient({ baseUrl: origin, apiKey: provisionKey.secret, fetch: transport });
+    const privateDefinition = { ...definition, id: randomUUID() };
+    const privateOptions = {
+      integrationPolicy: { mode: 'private', contextFields: [{ key: 'eventId', type: 'string', required: true }] },
+    } satisfies CreateFormOptions;
+    const isDenied = (error: unknown) => error instanceof PlyliError && error.status === 403;
+    await assert.rejects(sdk.createForm(workspaceId, privateDefinition, privateOptions), isDenied);
+    assert.throws(() => provisioner.createForm(workspaceId, privateDefinition, {
+      integrationPolicy: { mode: 'public', contextFields: [{ key: 'eventId', type: 'string', required: true }] },
+    }), /Required context fields/);
+    const draft = await provisioner.createForm(workspaceId, privateDefinition, privateOptions);
+    assert.equal(draft.publishedRevision, null);
+    const privateFormId = draft.definition.id;
+    const isUnavailable = (error: unknown) => error instanceof PlyliError && error.status === 404;
+    await assert.rejects(publicClient.getPublicForm(draft.publicSlug), isUnavailable);
+    await assert.rejects(provisioner.getForm(workspaceId, privateFormId), isDenied);
+    await assert.rejects(provisioner.saveDraft(workspaceId, privateFormId, draft.version, privateDefinition), isDenied);
+    await sdk.publish(workspaceId, privateFormId, draft.version);
+    assert.equal((await sdk.getIntegration(workspaceId, privateFormId)).policy.mode, 'private');
+    const privatePublished = await sdk.getPublishedForm(workspaceId, privateFormId);
+    assert.equal(privatePublished.id, privateFormId);
+    const privatePayload = { ...payload, revision: privatePublished.revision };
+    await assert.rejects(publicClient.getPublicForm(draft.publicSlug), isUnavailable);
+    await assert.rejects(publicClient.submitPublic(draft.publicSlug, privatePayload, randomUUID()), isUnavailable);
+    assert.equal((await sdk.validateSubmission(workspaceId, privateFormId, privatePayload)).valid, false);
+    const privateReceipt = await sdk.submit(workspaceId, privateFormId, { ...privatePayload, externalContext: { eventId: 'event_123' } }, randomUUID());
+    assert.equal(privateReceipt.formRevision, privatePublished.revision);
+    assert.throws(() => session.createKey(workspaceId, {
+      name: 'Invalid bound key', scopes: ['forms:provision-private'], formIds: [privateFormId],
+    }), /workspace-wide/);
     await assert.rejects(sdk.createKey(workspaceId, { name: 'Denied', scopes: ['forms:read'] }), /session/);
     await session.revokeKey(workspaceId, credential.id);
     await assert.rejects(sdk.getForm(workspaceId, formId), (error: unknown) => error instanceof PlyliError && error.status === 401);

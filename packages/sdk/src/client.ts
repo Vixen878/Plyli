@@ -14,6 +14,7 @@ export type SubmissionReceipt = z.output<typeof contracts.submissionReceiptSchem
 export type FormDefinition = z.input<typeof contracts.formDefinitionSchema>;
 export type CreateKeyInput = z.input<typeof contracts.createKeySchema>;
 export type IntegrationSettings = z.input<typeof contracts.integrationSettingsSchema>;
+export type CreateFormOptions = z.input<typeof contracts.createFormOptionsSchema>;
 export type RetentionSettings = z.infer<typeof contracts.retentionSettingsSchema>;
 export type ValidationResult = z.infer<typeof contracts.validationResultSchema>;
 export type RevisionRecord = z.infer<typeof contracts.revisionRecordSchema>;
@@ -131,7 +132,11 @@ export class PlyliClient {
     } while (cursor);
   }
   getForm(workspaceId: string, formId: string) { return this.data('getForm', { workspaceId, formId }, contracts.formDocumentSchema); }
-  createForm(workspaceId: string, definition: FormDefinition) { return this.data('createForm', { workspaceId }, contracts.formDocumentSchema, contracts.createFormSchema.parse({ definition })); }
+  createForm(workspaceId: string, definition: FormDefinition, options: CreateFormOptions = {}) {
+    const { integrationPolicy } = contracts.createFormOptionsSchema.parse(options);
+    const input = contracts.createFormSchema.parse({ definition, ...(integrationPolicy && { integrationPolicy }) });
+    return this.data('createForm', { workspaceId }, contracts.formDocumentSchema, input);
+  }
   saveDraft(workspaceId: string, formId: string, expectedVersion: number, definition: FormDefinition) { return this.data('saveDraft', { workspaceId, formId }, contracts.formDocumentSchema, contracts.updateFormSchema.parse({ expectedVersion, definition })); }
   archiveForm(workspaceId: string, formId: string, expectedVersion: number) { return this.data('archiveForm', { workspaceId, formId }, z.object({ archived: z.literal(true) }), version(expectedVersion)); }
   publish(workspaceId: string, formId: string, expectedVersion: number) { return this.data('publish', { workspaceId, formId }, contracts.formDocumentSchema, version(expectedVersion)); }

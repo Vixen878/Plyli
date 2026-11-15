@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createBlankForm } from '../lib/form-engine';
-import { sdkArchivePath, sdkVersion } from '../lib/sdk-distribution';
+import { sdkArchiveFilename, sdkArchivePath, sdkVersion } from '../lib/sdk-distribution';
+import sdk from '../packages/sdk/package.json';
 import { referenceExamples } from './test-api-examples';
 
 async function main() {
@@ -17,19 +18,20 @@ async function main() {
   }
   const urlIndex = process.argv.indexOf('--url');
   const archiveUrl = urlIndex < 0 ? undefined : process.argv[urlIndex + 1];
-  const archive = join(directory, `plyli-sdk-${sdkVersion}.tgz`);
+  const archive = join(directory, sdkArchiveFilename);
   if (archiveUrl) {
     const response = await fetch(archiveUrl);
     if (!response.ok) throw new Error('SDK download failed.');
     await writeFile(archive, Buffer.from(await response.arrayBuffer()));
   } else await writeFile(archive, await readFile(resolve(`public${sdkArchivePath}`)));
-  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'plyli-sdk-consumer-check', private: true, type: 'module', packageManager: 'pnpm@10.25.0' }));
+  await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'plyli-sdk-consumer-check', private: true, type: 'module', packageManager: sdk.packageManager }));
   await writeFile(join(directory, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n');
-  // Exercise the same URL installation shown in the reference when supplied.
-  run(['add', archiveUrl ?? archive]);
-  const installed: { version: string } = JSON.parse(await readFile(join(directory, 'node_modules/@plyli/sdk/package.json'), 'utf8'));
-  if (installed.version !== sdkVersion) throw new Error('Installed SDK version does not match the advertised archive.');
-  run(['add', '-D', 'typescript@5.9.3', '@types/node@22.20.5', 'esbuild@0.28.2']);
+  // An isolated store prevents pnpm from reusing a tarball previously installed from this URL.
+  const install = archiveUrl ? ['add', '--store-dir', join(directory, '.pnpm-store')] : ['add'];
+  run([...install, archiveUrl ?? archive]);
+  const installed: { name: string; version: string } = JSON.parse(await readFile(join(directory, 'node_modules/@plyli/sdk/package.json'), 'utf8'));
+  if (installed.name !== sdk.name || installed.version !== sdkVersion) throw new Error('Installed SDK package does not match the advertised archive.');
+  run([...install, '-D', 'typescript@5.9.3', '@types/node@22.20.5', 'esbuild@0.28.2']);
   const form = createBlankForm();
   form.questions[0].logicRules = [{ id: 'skip_rule', operator: 'equals', value: 'Skip', targetId: 'completion' }];
   const source = `import { PlyliClient, type FormSchema } from '@plyli/sdk';

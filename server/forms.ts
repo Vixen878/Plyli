@@ -117,17 +117,22 @@ export class FormService {
   }
 
   async create(principal: Principal, workspaceId: string, input: unknown) {
-    await authorize(this.database, principal, workspaceId, 'forms:write');
+    const { definition: submitted, integrationPolicy } = createFormSchema.parse(input);
+    const privateProvisioning = principal.kind === 'key' && integrationPolicy?.mode === 'private';
+    await authorize(this.database, principal, workspaceId, privateProvisioning ? 'forms:provision-private' : 'forms:write', Boolean(integrationPolicy) && !privateProvisioning);
     if (principal.kind === 'key' && principal.formIds !== null) throw new ApiError(403, 'FORBIDDEN', 'Form-bound credentials cannot create new forms.');
-    const { definition: submitted } = createFormSchema.parse(input);
     const now = new Date().toISOString();
     const definition: FormSchema = { ...submitted, revision: 1, createdAt: now, updatedAt: now };
     await this.database.$transaction(async (tx) => {
       await tx.form.create({ data: {
         id: definition.id, workspaceId, title: definition.title,
+        integrationPolicy: integrationPolicy ? jsonValue(integrationPolicy) : undefined,
         revisions: { create: { revision: 1, definition: jsonValue(definition) } },
       } });
       await tx.auditEvent.create({ data: { workspaceId, actorId: actorId(principal), action: 'form.create', resourceId: definition.id } });
+      if (integrationPolicy) {
+        await tx.auditEvent.create({ data: { workspaceId, actorId: actorId(principal), action: 'form.integration-policy', resourceId: definition.id } });
+      }
     });
     return this.getDocument(workspaceId, definition.id);
   }

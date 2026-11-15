@@ -1,6 +1,6 @@
 'use client';
 
-import { sdkArchivePath, sdkVersion } from '@/lib/sdk-distribution';
+import { privateProvisioningSdkNotice, sdkArchivePath, sdkVersion } from '@/lib/sdk-distribution';
 import { CodeBlock } from './reference-code';
 import { engineExample, errorExample } from '@/lib/api-examples';
 
@@ -12,6 +12,7 @@ export function SdkGuide({ origin, downloadOrigin }: { origin: string; downloadO
       <p className="text-sm leading-relaxed">Requires an ESM project and Node.js 22 or later.</p>
       <CodeBlock label="Official npm package (recommended)" code="pnpm add @plyli/sdk" />
       <p className="text-sm leading-relaxed">Set <code>baseUrl</code> on <code>PlyliClient</code> to any compatible Plyli server, including a self-hosted deployment.</p>
+      <p className="text-sm leading-relaxed">{privateProvisioningSdkNotice}</p>
       <p className="text-sm leading-relaxed">Use the optional archive when you need the SDK build that ships with this instance.</p>
       <CodeBlock label="Self-hosted SDK archive (alternative)" code={`pnpm add '${downloadOrigin}${sdkArchivePath}'`} />
       <a href={sdkArchivePath} download className="text-sm underline underline-offset-4">Download v{sdkVersion}</a>
